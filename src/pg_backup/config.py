@@ -90,6 +90,13 @@ class Config:
     def is_scratch(self, namespace: str) -> bool:
         return re.match(self.scratch_pattern, namespace) is not None
 
+    def scratch(self, namespace: str) -> str | None:
+        """A scratch restore's namespace named on the command line, made again from this
+        file's namespace and the 14 digits of its time, so nothing typed reaches the server
+        as it was typed; None when it isn't one."""
+        found = re.fullmatch(rf"{re.escape(self.namespace)}-restore-([0-9]{{14}})", namespace)
+        return f"{self.namespace}-restore-{int(found.group(1)):014d}" if found else None
+
 
 def load(path: Path = FILE) -> Config:
     try:

@@ -58,6 +58,10 @@ def test_load_reads_the_repository_file(config):
     assert config.is_scratch("auth-restore-20261106070216")
     assert not config.is_scratch("auth")
     assert not config.is_scratch("other-restore-20261106070216")
+    assert config.scratch("auth-restore-00261106070216") == "auth-restore-00261106070216"
+    assert config.scratch("auth-restore-2026110607021") is None
+    assert config.scratch("auth-restore-20261106070216\n") is None
+    assert config.scratch("--namespace=auth") is None
 
 
 def test_load_says_what_is_wrong(tmp_path, monkeypatch):

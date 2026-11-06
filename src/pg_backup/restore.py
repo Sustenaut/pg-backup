@@ -248,16 +248,21 @@ def _restore(config: Config, server: Server, target_text: str, namespace: str, m
     return namespace
 
 
-def clean(config: Config, server: Server, namespace: str) -> None:
-    if not config.is_scratch(namespace):
+def scratch_or_stop(config: Config, namespace: str) -> str:
+    rebuilt = config.scratch(namespace)
+    if rebuilt is None:
         raise Stop(2, f"{namespace} isn't a scratch restore ({config.namespace}-restore-<14 digits>)")
+    return rebuilt
+
+
+def clean(config: Config, server: Server, namespace: str) -> None:
+    namespace = scratch_or_stop(config, namespace)
     server.kubectl("delete", "namespace", namespace, "--wait=false")
 
 
 def promote(config: Config, server: Server, namespace: str, say: Callable[[str], None] = print,
             ask: Callable[[str], str] = input, interactive: Callable[[], bool] = sys.stdin.isatty) -> None:
-    if not config.is_scratch(namespace):
-        raise Stop(2, f"{namespace} isn't a scratch restore ({config.namespace}-restore-<14 digits>)")
+    namespace = scratch_or_stop(config, namespace)
     db = Database(config, server)
     try:
         promoted = db.scratch(namespace, "select pg_is_in_recovery()") == "f"
