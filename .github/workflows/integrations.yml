@@ -1,0 +1,15 @@
+# Fail when this repository's calls to outside services and its
+# integrations.json disagree: https://github.com/Sustenaut/integrations
+name: integrations
+
+on:
+  pull_request:
+  merge_group:
+  push: { branches: [main] }
+
+permissions:
+  contents: read
+
+jobs:
+  integrations:
+    uses: Sustenaut/integrations/.github/workflows/scan.yml@535f06d2ca3dc14b386245c03c0af0a30cf82128 # main
