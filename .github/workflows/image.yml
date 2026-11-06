@@ -1,0 +1,47 @@
+# The PostgreSQL image, the Terraform module and the shell scripts, on every pull request and
+# push to main: the image built and checked (WAL-G runs in it, PostgreSQL is the version named,
+# the CA certificates and walg-loop are there), `terraform fmt` and `validate` on the module,
+# and shellcheck on the scripts. Its check, `image`, is one main's ruleset requires.
+name: image
+
+on:
+  pull_request:
+  merge_group:
+  push: { branches: [main] }
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with: { persist-credentials: false }
+      - name: Build the image
+        uses: Sustenaut/pubkit/actions/docker-build@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+        with:
+          tags: pg-backup:check
+          scope: pg-backup-pg16
+          context: image
+          build-args: POSTGRES=16.14
+      - name: Check the image
+        run: |
+          docker run --rm --entrypoint sh pg-backup:check -c '
+            ! ldd /usr/local/bin/wal-g | grep "not found" &&
+            wal-g --version &&
+            postgres --version | grep -q " 16.14" &&
+            test -s /etc/ssl/certs/ca-certificates.crt &&
+            test -x /usr/local/bin/walg-loop &&
+            test "$WALG_COMPRESSION_METHOD" = brotli &&
+            test "$(id -u)" = 999'
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+      - name: Check the Terraform module
+        working-directory: terraform/wal-archive
+        run: |
+          terraform fmt -check -diff
+          terraform init -backend=false -input=false
+          terraform validate
+      - name: Check the shell scripts
+        run: shellcheck --severity=warning image/walg-loop.sh bin/pg-backup consumer/pg-backup

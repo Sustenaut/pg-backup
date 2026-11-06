@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Managed by pubkit 0.30.0: `pubkit sync` rewrites this file, and
+# `pubkit sync --check` fails when it differs.
+#
+# Run this repository's pubkit: the version its managed files and
+# tests/requirements.lock pin, whichever pubkit is installed, if any.
+#
+#   ./pubkit sync --check
+#   ./pubkit dns check example.eu
+#
+# uvx fetches that release's wheel once and keeps it in uv's cache; nothing
+# is installed into the repository or the system. pubkit runs in the
+# repository's root, where pubkit.json is, from whichever directory this is
+# called.
+set -euo pipefail
+
+if ! command -v uvx >/dev/null 2>&1; then
+  echo "pubkit: ./pubkit runs pubkit 0.30.0 with uv, which is not installed: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+  exit 127
+fi
+
+cd "$(dirname "$0")"
+exec uvx --from "https://github.com/Sustenaut/pubkit/releases/download/v0.30.0/pubkit-0.30.0-py3-none-any.whl" pubkit "$@"

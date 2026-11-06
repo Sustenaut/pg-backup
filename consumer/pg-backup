@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Run this repository's pg-backup: the one release pinned here. Copy this file to backups/ in a
+# repository whose PostgreSQL pg-backup looks after, beside its backups/pg-backup.json, and move
+# the version when you move to a new release (its CHANGELOG says what changed).
+#
+#   ./backups/pg-backup drill
+#   ./backups/pg-backup restore --to "2026-11-05 14:32:00+00"
+#
+# uvx fetches that release's wheel once and keeps it in uv's cache; nothing is installed into
+# the repository or the system. pg-backup runs in the repository's root, where backups/ is, from
+# whichever directory this is called, and checks backups/pg-backup.json against the schema in
+# that release before anything touches the server.
+set -euo pipefail
+version=0.1.0
+
+if ! command -v uvx >/dev/null 2>&1; then
+  echo "pg-backup: ./backups/pg-backup runs pg-backup $version with uv, which is not installed: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+  exit 127
+fi
+
+cd "$(dirname "$0")/.."
+exec uvx --from "https://github.com/Sustenaut/pg-backup/releases/download/v$version/pg_backup-$version-py3-none-any.whl" pg-backup "$@"

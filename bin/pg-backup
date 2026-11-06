@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# pg-backup from this checkout's src/, for working on it. A repository that uses pg-backup runs
+# a release instead, through its own backups/pg-backup (consumer/pg-backup).
+set -euo pipefail
+src="$(cd "$(dirname "$0")/../src" && pwd)"
+PYTHONPATH="$src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m pg_backup "$@"

@@ -1,0 +1,5 @@
+# Written by `pubkit sync` from security.dependabot in pubkit.json. Do not edit:
+# change pubkit.json and run `pubkit sync`.
+version: 2
+updates:
+  - {"package-ecosystem": "github-actions", "directory": "/", "schedule": {"interval": "weekly"}}

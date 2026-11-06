@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pg-backup"
+version = "0.1.0"
+description = "A PostgreSQL database's WAL-G archive on a k3s server: restored to any moment, drilled, and put back."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "David Schryer", email = "schryer@gmail.com" }]
+# None: a consumer runs it with uvx from the release's wheel, and it needs only ssh.
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/Sustenaut/pg-backup"
+
+[project.scripts]
+pg-backup = "pg_backup.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pg_backup = ["*.json"]
+
+# `make functional` measures the suite, the processes it starts included, into
+# coverage/coverage.xml for SonarQube Cloud.
+[tool.coverage.run]
+source = ["pg_backup"]
+patch = ["subprocess"]
+parallel = true
+
+[tool.coverage.xml]
+output = "coverage/coverage.xml"

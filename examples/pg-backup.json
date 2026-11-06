@@ -1,0 +1,22 @@
+{
+  "server": "sustenaut",
+  "namespace": "auth",
+  "statefulset": "postgres",
+  "container": "postgres",
+  "database": "keycloak",
+  "user": "keycloak",
+  "wal": {
+    "secret": "auth-wal",
+    "bucket": "sustenaut-auth-wal",
+    "prefix": "keycloak",
+    "account": "sustenaut-auth-wal@sustenaut.iam.gserviceaccount.com",
+    "gcs_key_secret": "auth-wal-gcs-key",
+    "encryption_key_secret": "auth-wal-key"
+  },
+  "dump": {"cronjob": "backup", "bucket": "sustenaut-auth-backups"},
+  "app": {"deployment": "keycloak", "selector": "app=keycloak"},
+  "check": {
+    "query": "select r.name || ' ' || count(u.id) from realm r left join user_entity u on u.realm_id = r.id group by r.name order by r.name",
+    "required": ["family", "sustenaut", "team"]
+  }
+}
