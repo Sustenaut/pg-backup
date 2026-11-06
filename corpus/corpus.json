@@ -1,0 +1,11 @@
+{
+  "bound": 67108864,
+  "label": "pg-backup's own publets",
+  "name": "pg-backup",
+  "parents": [
+    {
+      "alias": "base",
+      "path": "../../publet-corpus"
+    }
+  ]
+}
