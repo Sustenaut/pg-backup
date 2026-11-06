@@ -297,14 +297,14 @@ def promote(config: Config, server: Server, namespace: str, say: Callable[[str],
         server.kubectl("-n", c.namespace, "scale", "deployment", deployment, "--replicas=0")
         server.kubectl("-n", c.namespace, "wait", "--for=delete", "pod", "-l", c.app["selector"], "--timeout=5m")
         say("== Replacing the live database with the restore's")
-        dump = shlex.join(["k3s", "kubectl", "-n", namespace, "exec", "restore", "--",
-                           "pg_dump", "-h", SOCKET, "-U", c.user, "-d", c.database, "-Fc"])
-        load = shlex.join(["k3s", "kubectl", "-n", c.namespace, "exec", "-i", c.pod, "-c", c.container, "--",
-                           "pg_restore", "-U", c.user, "-d", c.database, "--clean", "--if-exists", "--no-owner",
-                           "--single-transaction", "--exit-on-error"])
+        dump = ("-n", namespace, "exec", "restore", "--",
+                "pg_dump", "-h", SOCKET, "-U", c.user, "-d", c.database, "-Fc")
+        load = ("-n", c.namespace, "exec", "-i", c.pod, "-c", c.container, "--",
+                "pg_restore", "-U", c.user, "-d", c.database, "--clean", "--if-exists", "--no-owner",
+                "--single-transaction", "--exit-on-error")
         try:
             # One transaction: on any error pg_restore stops, it rolls back, and live is as it was.
-            server.run(f"set -o pipefail; {dump} | {load}")
+            server.pipe(dump, load)
         except ServerError as error:
             raise Stop(1, f"pg_restore failed and rolled back: the live database is unchanged\n{error.output}") from None
         after = db.live(query)

@@ -158,11 +158,12 @@ def test_promote_dumps_first_and_stops_without_the_dump(config, server):
 
 def test_promote_replaces_live_in_one_transaction_and_starts_the_app(config, server):
     out = run_promote(config, server)
-    order = [c for c in server.calls if re.search(r"create job|scale|pg_restore", c)]
+    order = [c for c in server.calls if re.search(r"create job|scale|pg_dump|pg_restore", c)]
     assert "create job" in order[0]
     assert "--replicas=0" in order[1]
-    assert "pg_dump" in order[2] and "--single-transaction" in order[2] and order[2].startswith("set -o pipefail")
-    assert "--replicas=1" in order[3]
+    assert f"-n {NS} exec restore -- pg_dump" in order[2]
+    assert "-n auth exec -i postgres-0 -c postgres -- pg_restore" in order[3] and "--single-transaction" in order[3]
+    assert "--replicas=1" in order[4]
     assert "   live now matches the restore" in out
     assert out[-1] == f"When it looks right: ./backups/pg-backup clean {NS}"
 

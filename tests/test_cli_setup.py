@@ -155,3 +155,40 @@ def test_setup_needs_the_repository_scripts_and_the_server(config, server, tmp_p
         setup(config, server, tmp_path, say=lambda s: None, run=Runs(), which=lambda t: t)
     with pytest.raises(Stop, match="no pubkit wheel"):
         pubkit_wheel(tmp_path)
+
+
+class FakeProcess:
+    def __init__(self, code, err=b""):
+        import io
+        self.stdout = io.BytesIO(b"dump")
+        self.stderr = io.BytesIO(err)
+        self.returncode = code
+
+    def wait(self):
+        return self.returncode
+
+
+@pytest.mark.parametrize("first, second, message", [
+    (0, 0, None),
+    (1, 0, "kubectl -n ns exec restore … failed"),
+    (0, 1, "kubectl -n auth exec -i … failed"),
+])
+def test_the_server_pipes_one_kubectl_into_another(monkeypatch, first, second, message):
+    seen = []
+    monkeypatch.setattr(subprocess, "Popen", lambda argv, **k: seen.append(argv) or FakeProcess(first, b"broke"))
+
+    def fake_run(argv, stdin=None, capture_output=True):
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, second, b"", b"pg_restore: error")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    server = Server("sustenaut")
+    source, sink = ("-n", "ns", "exec", "restore", "--", "pg_dump"), ("-n", "auth", "exec", "-i", "p", "--", "pg_restore")
+    if message is None:
+        server.pipe(source, sink)
+    else:
+        with pytest.raises(ServerError, match=message) as error:
+            server.pipe(source, sink)
+        assert error.value.output in ("broke", "pg_restore: error")
+    assert seen[0][4] == "k3s kubectl -n ns exec restore -- pg_dump"
+    assert seen[1][4] == "k3s kubectl -n auth exec -i p -- pg_restore"

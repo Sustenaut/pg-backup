@@ -44,6 +44,10 @@ class FakeServer:
     def kubectl(self, *args, input=None, check=True):
         return self.run("k3s kubectl " + shlex.join(args), input=input, check=check)
 
+    def pipe(self, source, sink):
+        self.run("k3s kubectl " + shlex.join(source))
+        self.run("k3s kubectl " + shlex.join(sink))
+
     def ok(self, *args):
         try:
             self.kubectl(*args)
