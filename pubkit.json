@@ -9,7 +9,8 @@
     "checks": [
       "ci / passed",
       "release / release",
-      "image"
+      "image",
+      "integrations / scan"
     ],
     "release_app": 5529889
   },
