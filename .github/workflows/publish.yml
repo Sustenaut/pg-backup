@@ -1,0 +1,97 @@
+# Attaches a release's wheel and pushes its images. pubrel's release workflow, in main, tags
+# the version pyproject.toml holds and creates its GitHub release once it is published; when
+# main's run finishes, this builds that tag's wheel and uploads it as
+# pg_backup-X.Y.Z-py3-none-any.whl, the name backups/pg-backup pins, and pushes
+# ghcr.io/sustenaut/pg-backup:X.Y.Z-pg16. A release that already has both, or a version not yet
+# released, does nothing. Run it by hand to attach a release's wheel or image again.
+name: publish
+
+on:
+  workflow_run:
+    workflows: [main]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/sustenaut/pg-backup
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with: { python-version: '3.14' }
+      - name: Which release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            git fetch --quiet --depth 1 origin tag "v$version"
+            git checkout --quiet "v$version"
+          else
+            echo "v$version is not released"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Attach the wheel, if the release has none
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          wheel="pg_backup-$VERSION-py3-none-any.whl"
+          if gh release view "v$VERSION" --json assets --jq '.assets[].name' | grep -qx "$wheel"; then
+            echo "$wheel already attached"
+          else
+            python -m pip wheel --quiet --no-deps . -w dist
+            gh release upload "v$VERSION" "dist/$wheel"
+          fi
+      - name: Build the image
+        if: steps.release.outputs.released == 'true'
+        uses: Sustenaut/pubkit/actions/docker-build@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+        with:
+          tags: ${{ env.IMAGE }}:${{ steps.release.outputs.version }}-pg16
+          scope: pg-backup-pg16
+          context: image
+          build-args: POSTGRES=16.14
+      - name: Push the image, if it isn't there
+        if: steps.release.outputs.released == 'true'
+        env:
+          TAG: ${{ env.IMAGE }}:${{ steps.release.outputs.version }}-pg16
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          if docker manifest inspect "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already pushed"
+          else
+            docker push "$TAG"
+          fi
+      # A server pulls the image without a token, so the package must be public. A package's
+      # first push makes it private: asked as a server asks, signed out.
+      - name: Check a server can pull the image
+        if: steps.release.outputs.released == 'true'
+        env:
+          TAG: ${{ env.IMAGE }}:${{ steps.release.outputs.version }}-pg16
+        run: |
+          docker logout ghcr.io
+          if ! docker manifest inspect "$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG can't be pulled without a token: make the package public (github.com/orgs/Sustenaut/packages, pg-backup, Package settings, Change visibility)."
+            exit 1
+          fi
+          docker inspect --format '{{index .RepoDigests 0}}' "$TAG" || true

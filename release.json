@@ -1,0 +1,19 @@
+{
+  "name": "pg-backup",
+  "package": "pkg.pg-backup",
+  "tag": "PKG-PGBACK-11-2026",
+  "corpus": "corpus",
+  "manifest": {
+    "kind": "pyproject",
+    "path": "pyproject.toml"
+  },
+  "code": [
+    "src/",
+    "pyproject.toml",
+    "image/",
+    "terraform/",
+    "consumer/"
+  ],
+  "command": {"name": "pg-backup", "check": "pg-backup --version"},
+  "install": "uvx --from https://github.com/Sustenaut/pg-backup/releases/download/{tag}/pg_backup-{version}-py3-none-any.whl pg-backup"
+}

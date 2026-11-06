@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Sustenaut/pg-backup/blob/main/src/pg_backup/pg-backup.schema.json",
+  "title": "pg-backup.json",
+  "description": "One PostgreSQL database's backups: where it runs, where its archive is, what to stop while a restore goes back, and what a restore must contain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["server", "namespace", "statefulset", "container", "database", "user", "wal", "dump", "app", "check"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "server": {"description": "The k3s server, reached as root over ssh.", "$ref": "#/$defs/host"},
+    "namespace": {"description": "The namespace the database runs in. Scratch restores go into <namespace>-restore-<time>.", "$ref": "#/$defs/name"},
+    "statefulset": {"description": "The database's StatefulSet; its pod is <statefulset>-0.", "$ref": "#/$defs/name"},
+    "container": {"description": "PostgreSQL's container in that pod.", "$ref": "#/$defs/name"},
+    "database": {"$ref": "#/$defs/identifier"},
+    "user": {"$ref": "#/$defs/identifier"},
+    "wal": {
+      "description": "The write-ahead log archive (terraform/wal-archive) and its keys.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["secret", "bucket", "prefix", "account", "gcs_key_secret", "encryption_key_secret"],
+      "properties": {
+        "secret": {"description": "The Kubernetes Secret with gcs-key.json and libsodium-key.", "$ref": "#/$defs/name"},
+        "bucket": {"description": "The Cloud Storage bucket, without gs://.", "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$"},
+        "prefix": {"description": "WALG_GS_PREFIX's path in the bucket.", "type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*[a-z0-9]$"},
+        "account": {"description": "The bucket's service account.", "type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z0-9-]+\\.iam\\.gserviceaccount\\.com$"},
+        "gcs_key_secret": {"description": "The Bitwarden secret holding the account's key.", "$ref": "#/$defs/secret"},
+        "encryption_key_secret": {"description": "The Bitwarden secret holding WAL-G's libsodium key. Losing it makes the archive unreadable.", "$ref": "#/$defs/secret"}
+      }
+    },
+    "dump": {
+      "description": "The nightly logical dump, which promote runs once more before it changes anything.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cronjob", "bucket"],
+      "properties": {
+        "cronjob": {"$ref": "#/$defs/name"},
+        "bucket": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,61}[a-z0-9]$"}
+      }
+    },
+    "app": {
+      "description": "What uses the database, stopped while promote replaces it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deployment", "selector"],
+      "properties": {
+        "deployment": {"$ref": "#/$defs/name"},
+        "selector": {"description": "Its pods' label selector, such as app=keycloak.", "type": "string", "pattern": "^[a-z0-9./-]+=[a-z0-9._-]+$"}
+      }
+    },
+    "check": {
+      "description": "What a restore must contain. query returns one row per thing, its name first and a count after a space; every name in required must be among them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query", "required"],
+      "properties": {
+        "query": {"type": "string", "minLength": 1, "pattern": "^[^\"`\\\\$]*$"},
+        "required": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"}}
+      }
+    }
+  },
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,40}[a-z0-9])?$"},
+    "host": {"type": "string", "pattern": "^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$"},
+    "identifier": {"type": "string", "pattern": "^[a-z_][a-z0-9_]{0,62}$"},
+    "secret": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"}
+  }
+}
