@@ -1,4 +1,0 @@
-{
-  "category": "added",
-  "change": "pg-backup's first release: the PostgreSQL image with WAL-G, the WAL archive's Terraform module, and the pg-backup command (restore, drill, promote, clean, setup-secrets, check), configured by backups/pg-backup.json"
-}

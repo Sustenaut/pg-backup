@@ -1,0 +1,99 @@
+{
+  "claims": {
+    "identity": {
+      "class": "archival",
+      "content": "pg-backup 0.1.0 is released as v0.1.0 from commit 88ec0c3b7377939335ca71957cbc7c56f5f5fff9.",
+      "data": {
+        "columns": [
+          {
+            "name": "name"
+          },
+          {
+            "name": "version"
+          },
+          {
+            "name": "check"
+          },
+          {
+            "name": "expect"
+          },
+          {
+            "name": "tag"
+          },
+          {
+            "name": "commit"
+          }
+        ],
+        "rows": [
+          [
+            "pg-backup",
+            "0.1.0",
+            "pg-backup --version",
+            "pg-backup 0.1.0",
+            "v0.1.0",
+            "88ec0c3b7377939335ca71957cbc7c56f5f5fff9"
+          ]
+        ]
+      },
+      "scope": "the published release v0.1.0 of pg-backup",
+      "sources": [
+        {
+          "ref": "pg-backup",
+          "revision": "88ec0c3b7377939335ca71957cbc7c56f5f5fff9"
+        }
+      ]
+    },
+    "release": {
+      "class": "archival",
+      "content": "pg-backup 0.1.0 was released on 2026-11-06 from commit 88ec0c3b7377939335ca71957cbc7c56f5f5fff9 with these changes.",
+      "data": {
+        "columns": [
+          {
+            "name": "category"
+          },
+          {
+            "name": "change"
+          }
+        ],
+        "rows": [
+          [
+            "added",
+            "pg-backup's first release: the PostgreSQL image with WAL-G, the WAL archive's Terraform module, and the pg-backup command (restore, drill, promote, clean, setup-secrets, check), configured by backups/pg-backup.json"
+          ]
+        ]
+      },
+      "depends": [
+        "#identity"
+      ],
+      "scope": "the published release v0.1.0 of pg-backup",
+      "sources": [
+        {
+          "ref": "pg-backup",
+          "revision": "88ec0c3b7377939335ca71957cbc7c56f5f5fff9"
+        }
+      ]
+    }
+  },
+  "created": "2026-11-06T00:00:00Z",
+  "sections": [
+    {
+      "heading": "Identity",
+      "items": [
+        {
+          "ref": "#identity"
+        }
+      ]
+    },
+    {
+      "heading": "Release",
+      "items": [
+        {
+          "ref": "#release"
+        }
+      ]
+    }
+  ],
+  "slug": "pkg.pg-backup",
+  "tag": "PKG-PGBACK-11-2026",
+  "title": "pg-backup"
+}
