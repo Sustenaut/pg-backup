@@ -14,6 +14,10 @@
     "terraform/",
     "consumer/"
   ],
-  "command": {"name": "pg-backup", "check": "pg-backup --version"},
-  "install": "uvx --from https://github.com/Sustenaut/pg-backup/releases/download/{tag}/pg_backup-{version}-py3-none-any.whl pg-backup"
+  "command": {
+    "name": "pg-backup",
+    "check": "pg-backup --version"
+  },
+  "install": "uvx --from https://github.com/Sustenaut/pg-backup/releases/download/{tag}/pg_backup-{version}-py3-none-any.whl pg-backup",
+  "key": "pub:sha2-256:obvmxytplejcrfubrolsvbkkcufxkhnuydakmyn2eewg72xxcq6q"
 }
