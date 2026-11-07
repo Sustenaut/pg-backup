@@ -2,7 +2,7 @@
   "claims": {
     "identity": {
       "class": "archival",
-      "content": "pg-backup 0.1.0 is released as v0.1.0 from commit 88ec0c3b7377939335ca71957cbc7c56f5f5fff9.",
+      "content": "pg-backup 0.2.0 is released as v0.2.0 from commit 5c558e216a764aee104ecb9da965467dfddb6ebe.",
       "data": {
         "columns": [
           {
@@ -27,25 +27,25 @@
         "rows": [
           [
             "pg-backup",
-            "0.1.0",
+            "0.2.0",
             "pg-backup --version",
-            "pg-backup 0.1.0",
-            "v0.1.0",
-            "88ec0c3b7377939335ca71957cbc7c56f5f5fff9"
+            "pg-backup 0.2.0",
+            "v0.2.0",
+            "5c558e216a764aee104ecb9da965467dfddb6ebe"
           ]
         ]
       },
-      "scope": "the published release v0.1.0 of pg-backup",
+      "scope": "the published release v0.2.0 of pg-backup",
       "sources": [
         {
           "ref": "pg-backup",
-          "revision": "88ec0c3b7377939335ca71957cbc7c56f5f5fff9"
+          "revision": "5c558e216a764aee104ecb9da965467dfddb6ebe"
         }
       ]
     },
     "release": {
       "class": "archival",
-      "content": "pg-backup 0.1.0 was released on 2026-11-06 from commit 88ec0c3b7377939335ca71957cbc7c56f5f5fff9 with these changes.",
+      "content": "pg-backup 0.2.0 was released on 2026-11-07 from commit 5c558e216a764aee104ecb9da965467dfddb6ebe with these changes.",
       "data": {
         "columns": [
           {
@@ -57,24 +57,32 @@
         ],
         "rows": [
           [
+            "changed",
+            "drill says DRILL NOT RUN (exit 2), not DRILL FAILED, while the database isn't on pg-backup's image yet, and shows people's times in the machine's own zone, with the zone named"
+          ],
+          [
             "added",
-            "pg-backup's first release: the PostgreSQL image with WAL-G, the WAL archive's Terraform module, and the pg-backup command (restore, drill, promote, clean, setup-secrets, check), configured by backups/pg-backup.json"
+            "drill --wait: right after a merge, waits for the StatefulSet's rollout and for a base backup old enough, then drills"
+          ],
+          [
+            "fixed",
+            "restore and drill: a database nobody wrote to since the moment can be restored to it (pg-backup closes a WAL segment on live first, so the archive covers it), and a restore whose PostgreSQL stopped fails at once with the end of its log instead of waiting 30 minutes"
           ]
         ]
       },
       "depends": [
         "#identity"
       ],
-      "scope": "the published release v0.1.0 of pg-backup",
+      "scope": "the published release v0.2.0 of pg-backup",
       "sources": [
         {
           "ref": "pg-backup",
-          "revision": "88ec0c3b7377939335ca71957cbc7c56f5f5fff9"
+          "revision": "5c558e216a764aee104ecb9da965467dfddb6ebe"
         }
       ]
     }
   },
-  "created": "2026-11-06T00:00:00Z",
+  "created": "2026-11-07T00:00:00Z",
   "sections": [
     {
       "heading": "Identity",

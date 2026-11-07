@@ -1,4 +1,0 @@
-{
-  "category": "fixed",
-  "change": "restore and drill: a database nobody wrote to since the moment can be restored to it (pg-backup closes a WAL segment on live first, so the archive covers it), and a restore whose PostgreSQL stopped fails at once with the end of its log instead of waiting 30 minutes"
-}
