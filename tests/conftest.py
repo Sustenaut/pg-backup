@@ -87,3 +87,14 @@ def server():
     fake.on(r"get deployment keycloak", "1")
     fake.on(r"recovery_target_time", "'2026-11-06 07:05:00+00'\n")
     return fake
+
+
+@pytest.fixture(autouse=True)
+def utc(monkeypatch):
+    """People's times are this machine's zone: UTC in the tests, unless one sets another."""
+    import time
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()

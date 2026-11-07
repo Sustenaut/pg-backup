@@ -7,7 +7,7 @@ import sys
 
 from . import __version__
 from .config import ConfigError, load
-from .drill import drill
+from .drill import drill, wait_until_ready
 from .restore import Stop, clean, promote, restore
 from .server import Server, ServerError
 from .setup import push, setup
@@ -25,6 +25,8 @@ def parser() -> argparse.ArgumentParser:
     one.add_argument("--to", required=True, help="a moment with its zone, such as '2026-11-05 14:32:00+00', or latest")
     one = commands.add_parser("drill", help="restore to 10 minutes ago, timed, then delete it")
     one.add_argument("--to", help="another moment than 10 minutes ago")
+    one.add_argument("--wait", action="store_true",
+                     help="right after a merge: wait for the rollout and a base backup old enough, then drill")
     one = commands.add_parser("clean", help="delete a scratch restore")
     one.add_argument("namespace")
     one = commands.add_parser("promote", help="put a checked scratch restore back as the live database")
@@ -45,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "restore":
             restore(config, server, args.to)
         elif args.command == "drill":
+            if args.wait:
+                wait_until_ready(config, server)
             return drill(config, server, args.to)
         elif args.command == "clean":
             clean(config, server, args.namespace)

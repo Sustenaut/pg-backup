@@ -85,8 +85,10 @@ def test_a_failure_before_the_namespace_names_none(config, server):
 
 def test_an_image_without_wal_g_stops(config, server):
     server.on(r"command -v wal-g", "")
-    with pytest.raises(Stop, match="no wal-g"):
+    with pytest.raises(Stop, match="Has the deploy that moves it finished") as stop:
         restore(config, server, "latest", say=lambda s: None)
+    assert stop.value.code == 1
+    assert stop.value.old_image == "ghcr.io/sustenaut/pg-backup:0.1.0-pg16"
 
 
 def test_a_restore_missing_a_required_row_fails(config, server):

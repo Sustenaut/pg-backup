@@ -28,6 +28,7 @@ def test_a_bad_file_is_exit_2(tmp_path, monkeypatch, capsys):
 @pytest.mark.parametrize("argv, called", [
     (["restore", "--to", "latest"], "restore"),
     (["drill"], "drill"),
+    (["drill", "--wait"], "wait_until_ready"),
     (["clean", "auth-restore-20261106070216"], "clean"),
     (["promote", "auth-restore-20261106070216"], "promote"),
     (["setup-secrets"], "setup"),
@@ -35,10 +36,10 @@ def test_a_bad_file_is_exit_2(tmp_path, monkeypatch, capsys):
 ])
 def test_each_command_runs_its_function(config, monkeypatch, argv, called):
     seen = []
-    for name in ("restore", "drill", "clean", "promote", "setup", "push"):
+    for name in ("restore", "drill", "clean", "promote", "setup", "push", "wait_until_ready"):
         monkeypatch.setattr(cli, name, lambda *a, _n=name, **k: seen.append(_n) or 0)
     assert cli.main(argv) == 0
-    assert seen == [called]
+    assert seen == ([called, "drill"] if called == "wait_until_ready" else [called])
 
 
 def test_stops_and_server_errors_become_exit_codes(config, monkeypatch, capsys):

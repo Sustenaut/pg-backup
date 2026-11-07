@@ -179,7 +179,8 @@ def _restore(config: Config, server: Server, target_text: str, namespace: str, m
     if not image:
         raise Stop(1, f"no container {config.container} in statefulset {config.statefulset} (namespace {config.namespace})")
     start = clock()
-    say(f"== Restoring to {shown} into {namespace}")
+    when = "" if target is None else f" ({target.astimezone():%H:%M:%S %Z})"
+    say(f"== Restoring to {shown}{when} into {namespace}")
 
     def took(what: str, since: float) -> None:
         say(f"   {what}: {round(clock() - since)} s")
@@ -197,7 +198,11 @@ def _restore(config: Config, server: Server, target_text: str, namespace: str, m
         return server.kubectl("-n", namespace, "exec", "restore", "--", "sh", "-c", command, check=check)
 
     if not in_pod("command -v wal-g", check=False).strip():
-        raise Stop(1, f"the image {image} has no wal-g: is it pg-backup's image?")
+        # Usually a deploy that hasn't finished: the StatefulSet still runs the image from before.
+        stop = Stop(1, f"{config.namespace}'s StatefulSet {config.statefulset} runs {image}, which has no wal-g: "
+                       "it isn't pg-backup's image yet. Has the deploy that moves it finished?")
+        stop.old_image = image
+        raise stop
 
     step = clock()
     listed = in_pod("wal-g backup-list --json 2>/dev/null", check=False).strip()
