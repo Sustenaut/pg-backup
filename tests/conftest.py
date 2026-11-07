@@ -86,6 +86,8 @@ def server():
     fake.on(r"group by r\.name", ROWS + "\n")
     fake.on(r"get deployment keycloak", "1")
     fake.on(r"recovery_target_time", "'2026-11-06 07:05:00+00'\n")
+    fake.on(r"extract\(epoch from last_archived_time\)", "4102444800\n")  # 2100: the archive covers any moment
+    fake.on(r"status >/dev/null && echo up", "up\n")
     return fake
 
 

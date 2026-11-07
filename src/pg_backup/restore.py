@@ -204,6 +204,9 @@ def _restore(config: Config, server: Server, target_text: str, namespace: str, m
         stop.old_image = image
         raise stop
 
+    if target is not None:
+        cover(config, server, target, say, clock, sleep)
+
     step = clock()
     listed = in_pod("wal-g backup-list --json 2>/dev/null", check=False).strip()
     backups = json.loads(listed) if listed.startswith("[") else []
@@ -233,6 +236,10 @@ def _restore(config: Config, server: Server, target_text: str, namespace: str, m
                 break
         except ServerError:
             pass
+        # pg_ctl status exits 3 once PostgreSQL has stopped, as it does when recovery fails.
+        if not in_pod('pg_ctl -D "$PGDATA" status >/dev/null && echo up', check=False).strip():
+            log = in_pod("tail -n 8 /restore/postgres.log", check=False).rstrip()
+            raise Stop(1, f"the restore's PostgreSQL stopped during recovery; the end of its log:\n{log}")
         if clock() > deadline:
             raise Stop(1, f"the restore in {namespace} didn't finish recovery in 30 minutes: see /restore/postgres.log there")
         sleep(2)
@@ -258,6 +265,28 @@ def scratch_or_stop(config: Config, namespace: str) -> str:
     if rebuilt is None:
         raise Stop(2, f"{namespace} isn't a scratch restore ({config.namespace}-restore-<14 digits>)")
     return rebuilt
+
+
+def cover(config: Config, server: Server, target: datetime, say: Callable[[str], None],
+          clock: Callable[[], float], sleep: Callable[[float], None]) -> None:
+    """Makes the archive reach past the moment, so recovery can stop there rather than run out
+    of WAL first. A database nobody wrote to since then has nothing archived after it, and
+    PostgreSQL won't stop at a moment past the end of its WAL. So when the live server's last
+    archived segment is older than the moment, it commits one WAL message on live (no table
+    changes, a commit record timestamped now), closes the segment, and waits for it to be
+    archived."""
+    db = Database(config, server)
+    last = db.live("select coalesce(extract(epoch from last_archived_time), 0)::bigint from pg_stat_archiver")
+    if int(last or 0) > target.timestamp():
+        return
+    say("   the archive ends before the moment (nothing written since): closing a WAL segment on live")
+    segment = db.live("begin; select pg_logical_emit_message(true, 'pg-backup', 'drill'); commit; "
+                      "select pg_walfile_name(pg_switch_wal())").splitlines()[-1].strip()
+    deadline = clock() + 180
+    while db.live("select coalesce(last_archived_wal, '') from pg_stat_archiver") < segment:
+        if clock() > deadline:
+            raise Stop(1, f"live didn't archive WAL segment {segment} in 3 minutes: see the wal-g container's log")
+        sleep(5)
 
 
 def clean(config: Config, server: Server, namespace: str) -> None:

@@ -189,3 +189,37 @@ def test_live_not_matching_after_promote_fails_and_starts_the_app(config, server
         run_promote(config, server)
     assert server.ran("--replicas=1")
 
+
+
+def test_an_idle_database_gets_a_segment_closed_so_the_archive_covers_the_moment(config, server):
+    archived = iter(["000000010000000000000003", "000000010000000000000004"])
+    server.on(r"extract\(epoch from last_archived_time\)", "1762412000\n")  # before the moment
+    server.on(r"pg_switch_wal", "0/4000000\n000000010000000000000004\n")
+    server.on(r"select coalesce\(last_archived_wal", lambda command: next(archived))
+    out = []
+    restore(config, server, "2026-11-06 07:05:00+00", say=out.append, sleep=lambda s: None)
+    assert "   the archive ends before the moment (nothing written since): closing a WAL segment on live" in out
+    assert server.ran(r"-n auth exec postgres-0 -c postgres -- psql .*pg_logical_emit_message\(true")
+
+
+def test_a_segment_live_never_archives_stops(config, server):
+    server.on(r"extract\(epoch from last_archived_time\)", "0\n")
+    server.on(r"pg_switch_wal", "000000010000000000000004\n")
+    server.on(r"select coalesce\(last_archived_wal", "000000010000000000000003")
+    ticks = iter(range(0, 10000, 100))
+    with pytest.raises(Stop, match="didn't archive WAL segment 000000010000000000000004"):
+        restore(config, server, "2026-11-06 07:05:00+00", say=lambda s: None, clock=lambda: next(ticks), sleep=lambda s: None)
+
+
+def test_latest_needs_no_segment_closed(config, server):
+    server.on(r"extract\(epoch from last_archived_time\)", "0\n")
+    restore(config, server, "latest", say=lambda s: None, sleep=lambda s: None)
+    assert not server.ran("pg_switch_wal")
+
+
+def test_a_restore_whose_postgresql_stopped_fails_at_once_with_its_log(config, server):
+    server.on(r"pg_is_in_recovery", ServerError("no server"))
+    server.on(r"status >/dev/null && echo up", "")
+    server.on(r"tail -n 8 /restore/postgres.log", "FATAL:  recovery ended before configured recovery target was reached\n")
+    with pytest.raises(Stop, match="stopped during recovery; the end of its log:\nFATAL:  recovery ended"):
+        restore(config, server, "latest", say=lambda s: None, sleep=lambda s: None)
