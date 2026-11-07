@@ -120,7 +120,9 @@ The tests run against a fake server, so they need neither ssh nor a cluster.
 ## Releases
 
 pubrel versions it by what changed: each pull request that changes code records it with
-`pubrel add`, and `pubrel prepare` cuts a release pull request. Merging it tags the release,
+`pubrel add`, and `pubrel prepare` cuts a release pull request. On that pull request, set
+`consumer/pg-backup`'s `version=` to the new version (pubrel moves only pyproject.toml; the suite
+fails until they match), so a repository copying it from the tag runs that release. Merging it tags the release,
 and the publish workflow attaches the wheel `backups/pg-backup` pins and pushes the image.
 [CHANGELOG.md](CHANGELOG.md) lists every release.
 
