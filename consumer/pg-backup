@@ -11,7 +11,7 @@
 # whichever directory this is called, and checks backups/pg-backup.json against the schema in
 # that release before anything touches the server.
 set -euo pipefail
-version=0.1.0
+version=0.2.0
 
 if ! command -v uvx >/dev/null 2>&1; then
   echo "pg-backup: ./backups/pg-backup runs pg-backup $version with uv, which is not installed: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
