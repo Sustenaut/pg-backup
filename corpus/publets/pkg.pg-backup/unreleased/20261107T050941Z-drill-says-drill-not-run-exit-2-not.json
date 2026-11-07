@@ -1,4 +1,0 @@
-{
-  "category": "changed",
-  "change": "drill says DRILL NOT RUN (exit 2), not DRILL FAILED, while the database isn't on pg-backup's image yet, and shows people's times in the machine's own zone, with the zone named"
-}
