@@ -75,7 +75,10 @@ is Sustenaut's sign-in database.
    `PGBACKUP_BASE_AT` (HHMM, UTC, by default `0247`) sets the nightly base backup, and
    `PGBACKUP_STATUS_EVERY` (minutes, by default 5) the status line:
    `{"fact": "wal_archive", "last_archived_time": …, "failed_count": …, "last_backup": …}`.
-5. **A drill,** once the first base backup is there: `./backups/pg-backup drill`.
+5. **A drill,** right after the change that switches the pod deploys: `./backups/pg-backup drill --wait`.
+
+Times meant for people (retry times, what a drill restored to) are in the laptop's own time zone,
+with the zone named; the restore target PostgreSQL gets, and WAL-G's own times, stay in UTC.
 
 ## The commands
 
@@ -84,7 +87,7 @@ server as `root@<server>` over ssh and runs `k3s kubectl` there.
 
 | Command | When | Exit codes |
 |---|---|---|
-| `drill [--to T]` | Monthly, and after any change to the backups or PostgreSQL: restores to 10 minutes ago (or T), times it, deletes it | 0 `DRILL PASSED`, under 15 minutes; 2 `DRILL NOT RUN`, no base backup that old yet, with when to retry; 1 `DRILL FAILED` |
+| `drill [--to T] [--wait]` | Monthly, and after any change to the backups or PostgreSQL: restores to 10 minutes ago (or T), times it, deletes it. `--wait`, right after a merge: first waits for the StatefulSet's rollout and for a base backup old enough (up to 40 minutes) | 0 `DRILL PASSED`, under 15 minutes; 2 `DRILL NOT RUN`, no base backup that old yet or the database not on pg-backup's image yet, with what to do; 1 `DRILL FAILED` |
 | `restore --to T` | To look at, or get back, the database at a moment (`latest`, or a time with its zone) | 0; 3 no base backup before T; 2 bad arguments; 1 anything else |
 | `promote NS` | To put a restore you've checked back as the live database | 0; 1 not promoted, for the reason given; 2 no terminal, or not a scratch namespace |
 | `clean NS` | To delete a scratch restore | 0; 2 not a scratch namespace |

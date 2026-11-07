@@ -26,7 +26,8 @@
       "plugin": "github.ghcr",
       "paths": [
         ".github/workflows/publish.yml",
-        "tests/conftest.py"
+        "tests/conftest.py",
+        "tests/test_restore.py"
       ],
       "mode": "required"
     },

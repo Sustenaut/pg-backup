@@ -1,0 +1,4 @@
+{
+  "category": "added",
+  "change": "drill --wait: right after a merge, waits for the StatefulSet's rollout and for a base backup old enough, then drills"
+}
