@@ -51,7 +51,7 @@ jobs:
   # main, a published version is tagged and released.
   release:
     needs: passed
-    uses: Sustenaut/pubrel/.github/workflows/release.yml@5395ddd816d9530b649b92ed0b8b3cfdfe87d7dc # v0.6.1
+    uses: Sustenaut/pubrel/.github/workflows/release.yml@852ee8cc67d009440c84014b36463ae4a0ec7fb0 # v0.6.2
     with: {"pubrel-version": "v0.6.1"}
     secrets: { RELEASE_APP_ID: '${{ secrets.RELEASE_APP_ID }}', RELEASE_APP_KEY: '${{ secrets.RELEASE_APP_KEY }}' }
     permissions:
