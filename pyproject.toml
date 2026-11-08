@@ -20,6 +20,11 @@ Repository = "https://github.com/Sustenaut/pg-backup"
 [project.scripts]
 pg-backup = "pg_backup.cli:main"
 
+# The pg.database need type, for pubkit's deploy walk. It names an instance: the walk calls its
+# check and fulfil as methods.
+[project.entry-points."sustenaut.needs"]
+pg-database = "pg_backup.need:pg_database"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

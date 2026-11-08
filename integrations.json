@@ -3,7 +3,8 @@
     {
       "plugin": "bitwarden.secrets",
       "paths": [
-        "tests/test_cli_setup.py"
+        "tests/test_cli_setup.py",
+        "tests/test_need.py"
       ],
       "mode": "required"
     },
@@ -34,7 +35,9 @@
     {
       "plugin": "google.cloud",
       "paths": [
-        "src/pg_backup/setup.py"
+        "src/pg_backup/need.py",
+        "src/pg_backup/setup.py",
+        "tests/test_need.py"
       ],
       "mode": "required"
     },
