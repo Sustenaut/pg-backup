@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -95,20 +96,55 @@ def setup(config: Config, server: Server, root: Path = Path("."), say: Callable[
         check = run(["./with-secrets", "sh", "-c", f'test -n "${{{env_name(secret)}:-}}"'], capture_output=True, cwd=root)
         return check.returncode == 0
 
+    def make_account_key(secret: str) -> None:
+        if run(["./pubkit", "service-account-key", "create", "--account", config.wal["account"], "--secret", secret], cwd=root).returncode != 0:
+            raise Stop(1, f"couldn't make {secret}")
+
+    def make_encryption_key(secret: str, note: str) -> None:
+        if run(["uvx", "--from", pubkit_wheel(root), "python", "-c", WRITE_KEY, secret, note], cwd=root).returncode != 0:
+            raise Stop(1, f"couldn't make {secret}")
+
+    def put_secret() -> None:
+        if run(["./with-secrets", "./backups/pg-backup", "setup-secrets", "--push"], cwd=root).returncode != 0:
+            raise Stop(1, "couldn't put the Secret in the cluster")
+
+    make_keys(config, Keys(in_bitwarden, make_account_key, make_encryption_key, put_secret), say)
+
+
+@dataclass(frozen=True)
+class Keys:
+    """How make_keys reaches Bitwarden and the cluster: through ./pubkit and ./with-secrets for
+    setup-secrets, through the deploy walk's Bitwarden writer and kubectl for the pg.database need.
+    Each make or put raises Stop when it fails, with no value in its message."""
+    in_bitwarden: Callable[[str], bool]
+    make_account_key: Callable[[str], None]  # the Bitwarden secret's name
+    make_encryption_key: Callable[[str, str], None]  # the name, and the secret's note
+    put_secret: Callable[[], None]
+
+
+def make_keys(config: Config, keys: Keys, say: Callable[[str], None] = print) -> list[str]:
+    """setup-secrets' three steps: each key made unless Bitwarden has it, then the WAL Secret put
+    in the cluster. Returns what it did, in words, with no value."""
+    done = []
     gcs, key = config.wal["gcs_key_secret"], config.wal["encryption_key_secret"]
     say(f"== 1. The bucket's key, {gcs}")
-    if in_bitwarden(gcs):
-        say("   already in Bitwarden")
-    elif run(["./pubkit", "service-account-key", "create", "--account", config.wal["account"], "--secret", gcs], cwd=root).returncode != 0:
-        raise Stop(1, f"couldn't make {gcs}")
-    say(f"== 2. WAL-G's encryption key, {key}")
-    if in_bitwarden(key):
+    if keys.in_bitwarden(gcs):
         say("   already in Bitwarden")
     else:
-        note = f"WAL-G's encryption key for the write-ahead log archive gs://{config.wal['bucket']}/{config.wal['prefix']}. Without it the archive can't be read."
-        if run(["uvx", "--from", pubkit_wheel(root), "python", "-c", WRITE_KEY, key, note], cwd=root).returncode != 0:
-            raise Stop(1, f"couldn't make {key}")
+        keys.make_account_key(gcs)
+        done.append(f"made {gcs}")
+    say(f"== 2. WAL-G's encryption key, {key}")
+    if keys.in_bitwarden(key):
+        say("   already in Bitwarden")
+    else:
+        keys.make_encryption_key(key, encryption_note(config))
+        done.append(f"made {key}")
     say(f"== 3. Into the cluster, as the Secret {config.wal['secret']}")
-    if run(["./with-secrets", "./backups/pg-backup", "setup-secrets", "--push"], cwd=root).returncode != 0:
-        raise Stop(1, "couldn't put the Secret in the cluster")
+    keys.put_secret()
+    done.append(f"put Secret {config.wal['secret']} in {config.namespace}")
     say("   done")
+    return done
+
+
+def encryption_note(config: Config) -> str:
+    return f"WAL-G's encryption key for the write-ahead log archive gs://{config.wal['bucket']}/{config.wal['prefix']}. Without it the archive can't be read."

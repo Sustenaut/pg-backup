@@ -80,6 +80,44 @@ is Sustenaut's sign-in database.
 Times meant for people (retry times, what a drill restored to) are in the laptop's own time zone,
 with the zone named; the restore target PostgreSQL gets, and WAL-G's own times, stay in UTC.
 
+## In pubkit's deploy walk: the `pg.database` need
+
+pg-backup offers a need type to pubkit's deploy walk, under the entry point group
+`sustenaut.needs`, so a repository's `pubkit.json` can say its deploy needs a database pg-backup
+looks after:
+
+```json
+"deploy": {"namespace": "auth", "needs": [{"type": "pg.database"}]}
+```
+
+| Key | Default | What it is |
+|---|---|---|
+| `statefulset` | `postgres` | The database's StatefulSet; it names the need, and must be the one `backups/pg-backup.json` names |
+| `backups` | `backups/pg-backup.json` | pg-backup's settings, in the repository |
+| `container` | `wal-g` | The sidecar running `walg-loop`, whose log has the archive's status line |
+
+`pubkit deploy types` lists it once pg-backup's wheel is installed beside pubkit. pg-backup imports
+nothing from pubkit: it has what pubkit's need types have by their names.
+
+**The check** (6 s, read-only) is the worst of:
+
+1. `backups/pg-backup.json` as `check` reads it, in the deploy's namespace: else drift, with its first problem.
+2. The StatefulSet, there and ready: else missing.
+3. The last `wal_archive` status lines in the sidecar's last 50 log lines: drift when more archiving
+   failed since the line before, when nothing was archived for 10 minutes while `pg_wal` grew, or
+   when the last base backup is more than 26 hours old; unknown when there is no such line (the pod
+   isn't on pg-backup's image).
+4. The WAL Secret, with keys `gcs-key.json` and `libsodium-key` (their names alone are read).
+
+kubectl that may not read something is unknown, naming the access it needs. The drill isn't in the
+state yet, since no drill leaves a fact the check can read: a healthy database is ready, with the
+drill in the details and "run `./backups/pg-backup drill --wait` and record it" as what to do.
+
+**Fulfil** (grade auto, up to 300 s) does what `setup-secrets` does, through the walk's Bitwarden
+writer and kubectl: the account's key (from gcloud) and the encryption key are made unless Bitwarden
+has them, and the WAL Secret is applied with its manifest on kubectl's input, never on a command
+line. A walk without a Bitwarden write token says it needs one, and is run at a terminal.
+
 ## The commands
 
 Run from the repository's root, signed in to the server's tailnet. Everything reaches the
