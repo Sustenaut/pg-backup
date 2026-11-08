@@ -1,4 +1,0 @@
-{
-  "category": "fixed",
-  "change": "pg-backup --version prints the installed release's version (0.2.0 said 0.1.0), and consumer/pg-backup pins the release it ships in"
-}

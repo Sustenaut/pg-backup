@@ -1,4 +1,0 @@
-{
-  "category": "added",
-  "change": "the pg.database need type for pubkit's deploy walk (entry point sustenaut.needs): its check reads the settings, the StatefulSet, the wal-g sidecar's status lines and the WAL Secret; its fulfil makes the archive's keys as setup-secrets does, through the walk's Bitwarden writer, with the WAL Secret on kubectl's input"
-}
