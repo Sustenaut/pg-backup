@@ -56,5 +56,8 @@
       ],
       "mode": "required"
     }
+  ],
+  "own_hosts": [
+    "sustenaut.eu"
   ]
 }
