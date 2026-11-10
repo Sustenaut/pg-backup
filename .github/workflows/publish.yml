@@ -63,7 +63,7 @@ jobs:
           fi
       - name: Build the image
         if: steps.release.outputs.released == 'true'
-        uses: Sustenaut/pubkit/actions/docker-build@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+        uses: Sustenaut/pubhost/actions/docker-build@2196c741d3de6c92c6035c42435c6e517c8ba0ce # v0.1.0
         with:
           tags: ${{ env.IMAGE }}:${{ steps.release.outputs.version }}-pg16
           scope: pg-backup-pg16
