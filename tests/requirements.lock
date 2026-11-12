@@ -349,8 +349,8 @@ parse_type==0.6.6 \
 pluggy==1.7.0 \
     --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec \
     --hash=sha256:d1eaa46ebb595891b860ab086b4d09c8588af65ebd4361b8e8f4bb8920b90ba8
-pubkit @ https://github.com/Sustenaut/pubkit/releases/download/v0.36.0/pubkit-0.36.0-py3-none-any.whl \
-    --hash=sha256:985e5846b1acc594fee97fbb7a3c415fbc25fe1d7b93dc1c2c8aeb99d2dcc8d0
+pubkit @ https://github.com/Sustenaut/pubkit/releases/download/v0.37.0/pubkit-0.37.0-py3-none-any.whl \
+    --hash=sha256:efe8f70b4a89ef6dc690d75e553bb2c84dd16011565d28799e9751bb16787940
 Pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
     --hash=sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c

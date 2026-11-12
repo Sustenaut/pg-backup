@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Managed by pubkit 0.36.0: `pubkit sync` rewrites this file, and
+# Managed by pubkit 0.37.0: `pubkit sync` rewrites this file, and
 # `pubkit sync --check` fails when it differs.
 #
 # Install a hash-locked requirements file with pip, and ride out release

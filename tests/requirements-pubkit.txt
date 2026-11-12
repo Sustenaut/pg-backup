@@ -1,4 +1,4 @@
-# Managed by pubkit 0.36.0: `pubkit sync` rewrites this file, and
+# Managed by pubkit 0.37.0: `pubkit sync` rewrites this file, and
 # `pubkit sync --check` fails when it differs. Add your own requirements to
 # requirements.txt, which includes this one; `pubkit lock` then pins the lot
 # with hashes in requirements.lock.
@@ -6,4 +6,4 @@ pytest==9.0.3
 pytest-bdd==8.1.0
 pytest-xdist==3.8.0
 hypothesis==6.170.5
-pubkit @ https://github.com/Sustenaut/pubkit/releases/download/v0.36.0/pubkit-0.36.0-py3-none-any.whl
+pubkit @ https://github.com/Sustenaut/pubkit/releases/download/v0.37.0/pubkit-0.37.0-py3-none-any.whl

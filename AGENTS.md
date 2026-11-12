@@ -1,6 +1,6 @@
 # Working in this repository
 
-Managed by pubkit 0.36.0: `pubkit sync` rewrites this file and `pubkit
+Managed by pubkit 0.37.0: `pubkit sync` rewrites this file and `pubkit
 sync --check` fails when it differs, so every pub* repository gives agents
 and people the same rules. Repository-specific guidance lives in the
 README. The standard behind these rules is pubkit's README:
