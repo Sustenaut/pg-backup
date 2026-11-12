@@ -47,7 +47,7 @@ is Sustenaut's sign-in database.
    `consumer/pg-backup` copied to `backups/pg-backup`. Check them with
    `./backups/pg-backup check`, which touches nothing.
 3. **The keys,** once: `./backups/pg-backup setup-secrets`, from the repository's root, which
-   needs its `./pubkit` and `./with-secrets`, gcloud, and a Bitwarden access token with write
+   needs its `./pubsec` and `./with-secrets`, gcloud, and a Bitwarden access token with write
    access, asked for at a hidden prompt. It makes the account's key and WAL-G's encryption key in
    Bitwarden and puts both in the cluster as the WAL Secret. A key already in Bitwarden is not
    made again, so after a rebuild it only puts the Secret back. **Losing the encryption key makes
@@ -80,9 +80,9 @@ is Sustenaut's sign-in database.
 Times meant for people (retry times, what a drill restored to) are in the laptop's own time zone,
 with the zone named; the restore target PostgreSQL gets, and WAL-G's own times, stay in UTC.
 
-## In pubkit's deploy walk: the `pg.database` need
+## In pubdeploy's walk: the `pg.database` need
 
-pg-backup offers a need type to pubkit's deploy walk, under the entry point group
+pg-backup offers a need type to pubdeploy's walk, under the entry point group
 `sustenaut.needs`, so a repository's `pubkit.json` can say its deploy needs a database pg-backup
 looks after:
 
@@ -96,8 +96,9 @@ looks after:
 | `backups` | `backups/pg-backup.json` | pg-backup's settings, in the repository |
 | `container` | `wal-g` | The sidecar running `walg-loop`, whose log has the archive's status line |
 
-`pubkit deploy types` lists it once pg-backup's wheel is installed beside pubkit. pg-backup imports
-nothing from pubkit: it has what pubkit's need types have by their names.
+`./pubdeploy types` lists it once pg-backup's wheel is in the repository's deploy.providers.
+pg-backup imports nothing from pubkit or pubdeploy: it has what their need types have by their
+names.
 
 **The check** (6 s, read-only) is the worst of:
 

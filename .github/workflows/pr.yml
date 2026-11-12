@@ -10,47 +10,71 @@ permissions:
   contents: read
 
 jobs:
+  # Whether an earlier run already passed on this commit's tree: then the
+  # jobs it ran are skipped, and nothing here tests less than it did.
+  tested:
+    name: ci
+    uses: Sustenaut/pubkit/.github/workflows/job-tested.yml@ec25e7ea8a86d688a626b0326fb131c11b6da081 # v0.36.0
+    with: {"workflow": ".github/workflows/pr.yml"}
+    permissions:
+      actions: read
+      contents: read
+
   functional:
     name: ci
-    uses: Sustenaut/pubkit/.github/workflows/job-python-functional.yml@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+    needs: [tested]
+    if: ${{ needs.tested.outputs.tested != 'true' }}
+    uses: Sustenaut/pubkit/.github/workflows/job-python-functional.yml@ec25e7ea8a86d688a626b0326fb131c11b6da081 # v0.36.0
 
   audit:
     name: ci
-    uses: Sustenaut/pubkit/.github/workflows/job-python-audit.yml@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+    needs: [tested]
+    if: ${{ needs.tested.outputs.tested != 'true' }}
+    uses: Sustenaut/pubkit/.github/workflows/job-python-audit.yml@ec25e7ea8a86d688a626b0326fb131c11b6da081 # v0.36.0
 
   osv:
     name: ci
-    uses: Sustenaut/pubkit/.github/workflows/job-osv.yml@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+    needs: [tested]
+    if: ${{ needs.tested.outputs.tested != 'true' }}
+    uses: Sustenaut/pubkit/.github/workflows/job-osv.yml@ec25e7ea8a86d688a626b0326fb131c11b6da081 # v0.36.0
 
   review:
     name: ci
-    uses: Sustenaut/pubkit/.github/workflows/job-review.yml@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+    needs: [tested]
+    if: ${{ needs.tested.outputs.tested != 'true' }}
+    uses: Sustenaut/pubkit/.github/workflows/job-review.yml@ec25e7ea8a86d688a626b0326fb131c11b6da081 # v0.36.0
 
   sonar:
     name: ci
-    needs: [functional]
-    uses: Sustenaut/pubkit/.github/workflows/job-sonar.yml@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+    needs: [tested, functional]
+    if: ${{ github.event_name != 'merge_group' && needs.tested.outputs.tested != 'true' }}
+    uses: Sustenaut/pubkit/.github/workflows/job-sonar.yml@ec25e7ea8a86d688a626b0326fb131c11b6da081 # v0.36.0
     with: {"reports": "sonar.python.coverage.reportPaths=*.xml", "layout": "-Dsonar.sources=src -Dsonar.tests=tests"}
     secrets: { SONAR_TOKEN: '${{ secrets.SONAR_TOKEN }}' }
 
   # The one check a ruleset requires: it passes only when every job
-  # above succeeded. None of them is ever skipped for not being asked for.
+  # above succeeded or, where an earlier run already passed on the
+  # commit's tree, was skipped for it, or is the scan, which the merge
+  # queue never runs. None is skipped for not being asked for.
   passed:
     name: ci / passed
     if: always()
-    needs: [functional, audit, osv, review, sonar]
+    needs: [tested, functional, audit, osv, review, sonar]
     runs-on: ubuntu-latest
     steps:
       - run: |
           echo "$RESULTS"
-          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")' > /dev/null
-        env: { RESULTS: '${{ toJSON(needs) }}' }
+          echo "$RESULTS" | jq -e --arg tested "$TESTED" --arg event "$EVENT" '.tested.result == "success"
+            and all(to_entries[]; .value.result == "success" or (.value.result == "skipped"
+              and ($tested == "true" or (.key == "sonar" and $event == "merge_group"))))' > /dev/null
+        env: { RESULTS: '${{ toJSON(needs) }}', TESTED: '${{ needs.tested.outputs.tested }}', EVENT: '${{ github.event_name }}' }
 
   # pubrel's release workflow: on a pull request, a code change records
   # what it changes and a release is the bump its changes require; on
   # main, a published version is tagged and released.
   release:
     needs: passed
+    if: ${{ !cancelled() && needs.passed.result == 'success' }}
     uses: Sustenaut/pubrel/.github/workflows/release.yml@5395ddd816d9530b649b92ed0b8b3cfdfe87d7dc # v0.6.1
     with: {"pubrel-version": "v0.6.1"}
     secrets: { RELEASE_APP_ID: '${{ secrets.RELEASE_APP_ID }}', RELEASE_APP_KEY: '${{ secrets.RELEASE_APP_KEY }}' }

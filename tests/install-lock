@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Managed by pubkit 0.36.0: `pubkit sync` rewrites this file, and
+# `pubkit sync --check` fails when it differs.
+#
+# Install a hash-locked requirements file with pip, and ride out release
+# downloads that fail: pip retries no 504.
+#
+#   tests/install-lock .venv/bin/pip                    # tests/requirements.lock
+#   tests/install-lock .venv/bin/pip other.lock
+#   tests/install-lock --rewrite tests/requirements.lock > mirrored.lock
+#
+# The install is tried three times, 15 s apart. When pubkit.json names a
+# wheel mirror (mirror.wheels), a fourth try takes each wheel the lock pins
+# by a GitHub release URL from the mirror instead, at the address its
+# sha256 gives: <mirror>/f/<sha256>/<file>.whl. The hashes stay as they
+# are, so pip checks every file: the mirror only has to be there, never
+# trusted. --rewrite writes that version of a lock, for pip-audit. With a
+# PyPI mirror too (mirror.pypi, a simple repository index at
+# <mirror>/simple/), the fourth try takes the other packages from it
+# instead of PyPI.
+set -euo pipefail
+
+MIRROR='https://storage.sustenaut.eu/wheels'
+PYPI='https://storage.sustenaut.eu/pypi'
+PAUSE="${INSTALL_LOCK_PAUSE:-15}"
+
+rewrite() {
+  if [ -z "$MIRROR" ]; then cat "$1"; return; fi
+  python3 - "$MIRROR" "$1" <<'PY'
+import re
+import sys
+
+mirror, path = sys.argv[1].rstrip("/"), sys.argv[2]
+text = open(path, encoding="utf-8").read()
+# A wheel's URL, then its hash, on the same line or the next (after a \).
+pinned = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/releases/download/[^/\s]+/([^/\s]+\.whl)"
+                    r"((?:[ \t]*\\\r?\n)?[ \t]*--hash=sha256:([0-9a-f]{64}))")
+sys.stdout.write(pinned.sub(lambda m: f"https://storage.sustenaut.eu/wheels/f/{m.group(3)}/{m.group(1)}{m.group(2)}", text))
+PY
+}
+
+if [ "${1:-}" = --rewrite ]; then
+  rewrite "${2:?usage: tests/install-lock --rewrite LOCK}"
+  exit 0
+fi
+
+pip="${1:?usage: tests/install-lock PIP [LOCK]}"
+lock="${2:-tests/requirements.lock}"
+for attempt in 1 2 3; do
+  "$pip" install --quiet --require-hashes -r "$lock" && exit 0
+  echo "install-lock: installing $lock failed (attempt $attempt of 3)" >&2
+  [ "$attempt" = 3 ] || sleep "$PAUSE"
+done
+[ -n "$MIRROR$PYPI" ] || exit 1
+
+index=()
+if [ -n "$PYPI" ]; then
+  index=(--index-url "${PYPI%/}/simple/")
+  echo "install-lock: trying again with the packages from $PYPI" >&2
+fi
+[ -z "$MIRROR" ] || echo "install-lock: trying again with our release wheels from $MIRROR" >&2
+mirrored="$(mktemp)"
+trap 'rm -f "$mirrored"' EXIT
+rewrite "$lock" > "$mirrored"
+"$pip" install --quiet --require-hashes ${index[@]+"${index[@]}"} -r "$mirrored"

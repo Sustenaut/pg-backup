@@ -1,23 +1,52 @@
 #!/usr/bin/env bash
-# Managed by pubkit 0.30.0: `pubkit sync` rewrites this file, and
+# Managed by pubkit 0.36.0: `pubkit sync` rewrites this file, and
 # `pubkit sync --check` fails when it differs.
 #
 # Run this repository's pubkit: the version its managed files and
 # tests/requirements.lock pin, whichever pubkit is installed, if any.
 #
 #   ./pubkit sync --check
-#   ./pubkit dns check example.eu
 #
 # uvx fetches that release's wheel once and keeps it in uv's cache; nothing
 # is installed into the repository or the system. pubkit runs in the
 # repository's root, where pubkit.json is, from whichever directory this is
 # called.
+#
+# With a wheel mirror in pubkit.json (mirror.wheels), the wheel is fetched
+# here instead, checked against the sha256 tests/requirements.lock pins, and
+# taken from the mirror when GitHub's release download fails.
 set -euo pipefail
 
 if ! command -v uvx >/dev/null 2>&1; then
-  echo "pubkit: ./pubkit runs pubkit 0.30.0 with uv, which is not installed: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+  echo "pubkit: ./pubkit runs pubkit 0.36.0 with uv, which is not installed: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
   exit 127
 fi
 
 cd "$(dirname "$0")"
-exec uvx --from "https://github.com/Sustenaut/pubkit/releases/download/v0.30.0/pubkit-0.30.0-py3-none-any.whl" pubkit "$@"
+# A wheel, fetched once into the user's cache, checked against its sha256 on every run.
+fetch() {
+  local dir="${XDG_CACHE_HOME:-$HOME/.cache}/pubkit/$3/$2" sum
+  fetched="$dir/${1##*/}"
+  if [ ! -f "$fetched" ]; then
+    mkdir -p "$dir"
+    curl -fsSL -o "$fetched.part" "$1" \
+      || curl -fsSL -o "$fetched.part" "https://storage.sustenaut.eu/wheels/f/$2/${1##*/}" \
+      || { rm -f "$fetched.part"; echo "pubkit: could not fetch $1" >&2; exit 1; }
+    mv "$fetched.part" "$fetched"
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then sum=$(sha256sum "$fetched"); else sum=$(shasum -a 256 "$fetched"); fi
+  if [ "${sum%% *}" != "$2" ]; then
+    rm -f "$fetched"
+    echo "pubkit: $1 is not the wheel $4 pins (sha256 $2)" >&2
+    exit 1
+  fi
+}
+
+# pubkit's own wheel, by the sha256 tests/requirements.lock pins, from the mirror when GitHub fails.
+from="https://github.com/Sustenaut/pubkit/releases/download/v0.36.0/pubkit-0.36.0-py3-none-any.whl"
+pin=$(sed -n "\#^pubkit @ $from#,/--hash=sha256:/s/.*--hash=sha256:\([0-9a-f]\{64\}\).*/\1/p" tests/requirements.lock 2>/dev/null | head -n 1)
+if [ -n "$pin" ]; then
+  fetch "$from" "$pin" wheels tests/requirements.lock
+  from="$fetched"
+fi
+exec uvx --from "$from" pubkit "$@"

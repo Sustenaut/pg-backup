@@ -1,11 +1,11 @@
 """The WAL archive's two keys, made once into Bitwarden, and put in the cluster as the WAL
-Secret: the bucket account's key, which `./pubkit service-account-key create` writes itself,
-and WAL-G's libsodium key, 32 random bytes written with pubkit's own Bitwarden code, in memory.
+Secret: the bucket account's key, which `./pubsec service-account-key create` writes itself,
+and WAL-G's libsodium key, 32 random bytes written with pubsec's own Bitwarden code, in memory.
 Losing the second makes the archive unreadable, so it is kept nowhere but Bitwarden and the
 cluster. A key already in Bitwarden is not made again, so running this again (after a rebuild)
 only puts the Secret back. No value is printed or put on a command line.
 
-It runs in the consuming repository's root, through its ./pubkit and ./with-secrets."""
+It runs in the consuming repository's root, through its ./pubsec and ./with-secrets."""
 
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ from .server import Server, ServerError
 WRITE_KEY = '''
 import base64, getpass, os, sys
 from pathlib import Path
-from pubkit.bitwarden import WriteFailed, ensure, write
-from pubkit.github_app import Stop
-from pubkit.service_account_key import bitwarden_project, find_project, find_secret
+from pubsec.bitwarden import WriteFailed, ensure, write
+from pubsec.github_app import Stop
+from pubsec.service_account_key import bitwarden_project, find_project, find_secret
 secret, note = sys.argv[1], sys.argv[2]
 problem = ensure()
 if problem:
@@ -37,7 +37,7 @@ try:
     name = bitwarden_project(Path.cwd(), None)
     token = getpass.getpass(f"   A Bitwarden access token with write access to project {name} (hidden): ")
     project, organization = find_project(token, name)
-    find_secret(token, project, name, secret, False)  # stops if it is there
+    find_secret(token, organization, project, name, secret, False)  # stops if it is there
     write(token, organization, project, secret, base64.b64encode(os.urandom(32)).decode(), note)
 except (Stop, WriteFailed) as error:
     sys.exit(f"   {error}")
@@ -68,10 +68,11 @@ def push(config: Config, server: Server, environ: dict = os.environ) -> None:
     server.run("k3s kubectl apply -f -", input=json.dumps(manifest))
 
 
-def pubkit_wheel(root: Path) -> str:
-    found = re.search(r"https://github\.com/Sustenaut/pubkit/releases/download/[^\"\s]*\.whl", (root / "pubkit").read_text())
+def pubsec_wheel(root: Path) -> str:
+    """The pubsec release ./pubsec runs, whose Bitwarden code writes the encryption key."""
+    found = re.search(r"https://github\.com/Sustenaut/pubsec/releases/download/[^\"\s]*\.whl", (root / "pubsec").read_text())
     if not found:
-        raise Stop(1, "no pubkit wheel in ./pubkit")
+        raise Stop(1, "no pubsec wheel in ./pubsec")
     return found.group(0)
 
 
@@ -81,7 +82,7 @@ def setup(config: Config, server: Server, root: Path = Path("."), say: Callable[
     for tool in ("gcloud", "ssh", "uvx", "bws"):
         if not which(tool):
             raise Stop(1, f"{tool} is not installed")
-    for script in ("pubkit", "with-secrets"):
+    for script in ("pubsec", "with-secrets"):
         if not (root / script).exists():
             raise Stop(1, f"no ./{script}: run this from the repository's root")
     bucket = f"gs://{config.wal['bucket']}"
@@ -97,11 +98,11 @@ def setup(config: Config, server: Server, root: Path = Path("."), say: Callable[
         return check.returncode == 0
 
     def make_account_key(secret: str) -> None:
-        if run(["./pubkit", "service-account-key", "create", "--account", config.wal["account"], "--secret", secret], cwd=root).returncode != 0:
+        if run(["./pubsec", "service-account-key", "create", "--account", config.wal["account"], "--secret", secret], cwd=root).returncode != 0:
             raise Stop(1, f"couldn't make {secret}")
 
     def make_encryption_key(secret: str, note: str) -> None:
-        if run(["uvx", "--from", pubkit_wheel(root), "python", "-c", WRITE_KEY, secret, note], cwd=root).returncode != 0:
+        if run(["uvx", "--from", pubsec_wheel(root), "python", "-c", WRITE_KEY, secret, note], cwd=root).returncode != 0:
             raise Stop(1, f"couldn't make {secret}")
 
     def put_secret() -> None:
@@ -113,7 +114,7 @@ def setup(config: Config, server: Server, root: Path = Path("."), say: Callable[
 
 @dataclass(frozen=True)
 class Keys:
-    """How make_keys reaches Bitwarden and the cluster: through ./pubkit and ./with-secrets for
+    """How make_keys reaches Bitwarden and the cluster: through ./pubsec and ./with-secrets for
     setup-secrets, through the deploy walk's Bitwarden writer and kubectl for the pg.database need.
     Each make or put raises Stop when it fails, with no value in its message."""
     in_bitwarden: Callable[[str], bool]
