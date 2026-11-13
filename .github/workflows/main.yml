@@ -23,7 +23,7 @@ jobs:
     name: ci
     needs: [tested]
     if: ${{ needs.tested.outputs.tested != 'true' }}
-    uses: Sustenaut/pubkit/.github/workflows/job-python-functional.yml@c7785ba2f32bd5c5a78053e9bfeaa1f966ae36f1 # v0.30.0
+    uses: Sustenaut/pubkit/.github/workflows/job-python-functional.yml@3bf6ed20f0ae2fe63ffb08cba96fe59a6cfddcb1 # v0.35.0
 
   audit:
     name: ci
