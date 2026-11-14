@@ -1,0 +1,11 @@
+# Written by `pubkit sync` from this repository's workflows. Do not edit:
+# the review job leaves these out of its license check, and no other.
+pkg:githubactions/Sustenaut/integrations/.github/workflows/scan.yml
+pkg:githubactions/Sustenaut/pubhost/actions/docker-build
+pkg:githubactions/Sustenaut/pubkit/.github/workflows/job-osv.yml
+pkg:githubactions/Sustenaut/pubkit/.github/workflows/job-python-audit.yml
+pkg:githubactions/Sustenaut/pubkit/.github/workflows/job-python-functional.yml
+pkg:githubactions/Sustenaut/pubkit/.github/workflows/job-review.yml
+pkg:githubactions/Sustenaut/pubkit/.github/workflows/job-sonar.yml
+pkg:githubactions/Sustenaut/pubkit/.github/workflows/job-tested.yml
+pkg:githubactions/Sustenaut/pubrel/.github/workflows/release.yml

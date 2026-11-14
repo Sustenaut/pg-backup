@@ -9,7 +9,7 @@ import pytest
 from pg_backup import cli
 from pg_backup.restore import Stop
 from pg_backup.server import Server, ServerError
-from pg_backup.setup import env_name, push, pubkit_wheel, secret_manifest, setup
+from pg_backup.setup import env_name, push, pubsec_wheel, secret_manifest, setup
 
 from conftest import EXAMPLE
 
@@ -110,7 +110,7 @@ class Runs:
 
 @pytest.fixture
 def repo(tmp_path, config):
-    (tmp_path / "pubkit").write_text('exec uvx --from "https://github.com/Sustenaut/pubkit/releases/download/v0.30.0/pubkit-0.30.0-py3-none-any.whl" pubkit "$@"\n')
+    (tmp_path / "pubsec").write_text('exec uvx --from "https://github.com/Sustenaut/pubsec/releases/download/v0.1.2/pubsec-0.1.2-py3-none-any.whl" pubsec "$@"\n')
     (tmp_path / "with-secrets").write_text("")
     return tmp_path
 
@@ -120,8 +120,8 @@ def test_setup_makes_missing_keys_then_pushes(config, server, repo):
     out = []
     setup(config, server, repo, say=out.append, run=runs, which=lambda t: "/usr/bin/" + t)
     joined = [" ".join(c) for c in runs.calls]
-    assert any("service-account-key create --account sustenaut-auth-wal@" in c for c in joined)
-    assert any(c.startswith("uvx --from https://github.com/Sustenaut/pubkit/") and c.endswith("auth-wal-key " + c.split("auth-wal-key ", 1)[1]) for c in joined)
+    assert any(c.startswith("./pubsec service-account-key create --account sustenaut-auth-wal@") for c in joined)
+    assert any(c.startswith("uvx --from https://github.com/Sustenaut/pubsec/") and c.endswith("auth-wal-key " + c.split("auth-wal-key ", 1)[1]) for c in joined)
     assert joined[-1] == "./with-secrets ./backups/pg-backup setup-secrets --push"
     assert out[-1] == "   done"
 
@@ -131,7 +131,7 @@ def test_setup_keeps_keys_already_there(config, server, repo):
     out = []
     setup(config, server, repo, say=out.append, run=runs, which=lambda t: t)
     assert out.count("   already in Bitwarden") == 2
-    assert pubkit_wheel(repo).endswith("pubkit-0.30.0-py3-none-any.whl")
+    assert pubsec_wheel(repo).endswith("pubsec-0.1.2-py3-none-any.whl")
 
 
 @pytest.mark.parametrize("failing, which, message", [
@@ -147,15 +147,15 @@ def test_setup_stops_on_each_failure(config, server, repo, failing, which, messa
 
 
 def test_setup_needs_the_repository_scripts_and_the_server(config, server, tmp_path):
-    with pytest.raises(Stop, match="no ./pubkit"):
+    with pytest.raises(Stop, match="no ./pubsec"):
         setup(config, server, tmp_path, say=lambda s: None, run=Runs(), which=lambda t: t)
-    (tmp_path / "pubkit").write_text("no wheel here")
+    (tmp_path / "pubsec").write_text("no wheel here")
     (tmp_path / "with-secrets").write_text("")
     server.on(r"^true$", ServerError("down"))
     with pytest.raises(Stop, match="doesn't answer"):
         setup(config, server, tmp_path, say=lambda s: None, run=Runs(), which=lambda t: t)
-    with pytest.raises(Stop, match="no pubkit wheel"):
-        pubkit_wheel(tmp_path)
+    with pytest.raises(Stop, match="no pubsec wheel"):
+        pubsec_wheel(tmp_path)
 
 
 class FakeProcess:
