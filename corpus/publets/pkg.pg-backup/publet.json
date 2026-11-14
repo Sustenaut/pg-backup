@@ -2,7 +2,7 @@
   "claims": {
     "identity": {
       "class": "archival",
-      "content": "pg-backup 0.2.1 is released as v0.2.1 from commit 509ef3c5dbe4abcdf46c8fa45a8bae06cd2bc9d9.",
+      "content": "pg-backup 0.3.0 is released as v0.3.0 from commit 1cffd62d3b4556597143ab47c15af260a40f29b2.",
       "data": {
         "columns": [
           {
@@ -27,25 +27,25 @@
         "rows": [
           [
             "pg-backup",
-            "0.2.1",
+            "0.3.0",
             "pg-backup --version",
-            "pg-backup 0.2.1",
-            "v0.2.1",
-            "509ef3c5dbe4abcdf46c8fa45a8bae06cd2bc9d9"
+            "pg-backup 0.3.0",
+            "v0.3.0",
+            "1cffd62d3b4556597143ab47c15af260a40f29b2"
           ]
         ]
       },
-      "scope": "the published release v0.2.1 of pg-backup",
+      "scope": "the published release v0.3.0 of pg-backup",
       "sources": [
         {
           "ref": "pg-backup",
-          "revision": "509ef3c5dbe4abcdf46c8fa45a8bae06cd2bc9d9"
+          "revision": "1cffd62d3b4556597143ab47c15af260a40f29b2"
         }
       ]
     },
     "release": {
       "class": "archival",
-      "content": "pg-backup 0.2.1 was released on 2026-11-08 from commit 509ef3c5dbe4abcdf46c8fa45a8bae06cd2bc9d9 with these changes.",
+      "content": "pg-backup 0.3.0 was released on 2026-11-14 from commit 1cffd62d3b4556597143ab47c15af260a40f29b2 with these changes.",
       "data": {
         "columns": [
           {
@@ -57,28 +57,24 @@
         ],
         "rows": [
           [
-            "fixed",
-            "pg-backup --version prints the installed release's version (0.2.0 said 0.1.0), and consumer/pg-backup pins the release it ships in"
-          ],
-          [
-            "added",
-            "the pg.database need type for pubkit's deploy walk (entry point sustenaut.needs): its check reads the settings, the StatefulSet, the wal-g sidecar's status lines and the WAL Secret; its fulfil makes the archive's keys as setup-secrets does, through the walk's Bitwarden writer, with the WAL Secret on kubectl's input"
+            "changed",
+            "setup-secrets makes the bucket account's key with ./pubsec service-account-key create and writes WAL-G's encryption key with pubsec's Bitwarden code, as pubkit 0.32.0 moved both to pubsec; the consuming repository needs its ./pubsec (pubkit 0.32.0 or later writes it)"
           ]
         ]
       },
       "depends": [
         "#identity"
       ],
-      "scope": "the published release v0.2.1 of pg-backup",
+      "scope": "the published release v0.3.0 of pg-backup",
       "sources": [
         {
           "ref": "pg-backup",
-          "revision": "509ef3c5dbe4abcdf46c8fa45a8bae06cd2bc9d9"
+          "revision": "1cffd62d3b4556597143ab47c15af260a40f29b2"
         }
       ]
     }
   },
-  "created": "2026-11-08T00:00:00Z",
+  "created": "2026-11-14T00:00:00Z",
   "sections": [
     {
       "heading": "Identity",
