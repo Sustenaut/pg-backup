@@ -21,5 +21,9 @@
     "wheels": "https://storage.sustenaut.eu/wheels",
     "terraform": "https://storage.sustenaut.eu/terraform",
     "pypi": "https://storage.sustenaut.eu/pypi"
-  }
+  },
+  "exceptions": [
+    {"rule": "TEST-01", "reason": "the tests move to a Gherkin suite once the keyless Google work in this repository lands", "until": "2026-12-31"},
+    {"rule": "TEST-02", "reason": "the plain tests move to scenarios once the keyless Google work in this repository lands", "until": "2026-12-31"}
+  ]
 }
