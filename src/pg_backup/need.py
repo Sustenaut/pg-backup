@@ -24,7 +24,7 @@ from typing import Any, Callable, Mapping
 
 from .config import ConfigError, load
 from .restore import Stop
-from .setup import Keys, make_keys, secret_manifest
+from .setup import KEY_NAMES, Keys, make_keys, secret_manifest
 
 STATES = ("ready", "missing", "drift", "blocked", "unknown")
 SUMMARY = 120  # pubkit's longest summary, in characters
@@ -328,6 +328,13 @@ class PgDatabase:
             ran = ctx.kubectl(["apply", "-f", "-"], input=manifest)
             if ran.returncode != 0:
                 raise Stop(1, f"kubectl apply refused the WAL Secret {config.wal['secret']} (exit {ran.returncode})")
+            # apply takes out only a key its own last apply put in: read the names back, and
+            # replace a Secret that still holds more than the encryption key.
+            names = ctx.kubectl(["-n", config.namespace, "get", "secret", config.wal["secret"], "-o", KEY_NAMES])
+            if names.returncode == 0 and set(str(names.stdout).split()) - set(SECRET_KEYS):
+                ran = ctx.kubectl(["replace", "-f", "-"], input=manifest)
+                if ran.returncode != 0:
+                    raise Stop(1, f"kubectl replace refused the WAL Secret {config.wal['secret']} (exit {ran.returncode})")
 
         said: list[str] = []
         try:

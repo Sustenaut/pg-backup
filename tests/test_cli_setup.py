@@ -86,12 +86,18 @@ def test_the_server_quotes_each_argument(monkeypatch):
 
 def test_the_secret_is_made_from_the_environment(config, server):
     environ = {"AUTH_WAL_KEY": "secret"}
+    server.on(r"go-template", "libsodium-key ")
     push(config, server, environ)
-    sent = json.loads(server.inputs[-1])
+    sent = json.loads(server.inputs[0])
     assert sent["metadata"] == {"name": "auth-wal", "namespace": "auth"}
     # The encryption key alone: the bucket is reached through Workload Identity, with no key.
     assert sent["data"] == {"libsodium-key": base64.b64encode(b"secret").decode()}
-    assert server.calls[-1] == "k3s kubectl apply -f -"
+    assert server.calls[0] == "k3s kubectl apply -f -" and "k3s kubectl replace -f -" not in server.calls
+    assert "get secret auth-wal" in server.calls[1] and "go-template" in server.calls[1]
+    # A Secret apply leaves a bucket key in (made by create secret, or edited) is replaced.
+    server.on(r"go-template", "gcs-key.json libsodium-key ")
+    push(config, server, environ)
+    assert server.calls[-1] == "k3s kubectl replace -f -" and json.loads(server.inputs[-1]) == sent
     with pytest.raises(Stop, match="AUTH_WAL_KEY is not set"):
         push(config, server, {})
     assert env_name("auth-wal-key") == "AUTH_WAL_KEY"

@@ -63,12 +63,22 @@ def secret_manifest(config: Config, encryption_key: str) -> dict:
     }
 
 
+# A Secret's key names, and nothing of their values.
+KEY_NAMES = "go-template={{range $k, $v := .data}}{{$k}} {{end}}"
+
+
 def push(config: Config, server: Server, environ: dict = os.environ) -> None:
-    """Run through ./with-secrets: the encryption key is in the environment."""
+    """Run through ./with-secrets: the encryption key is in the environment. apply takes out a
+    key only its own last apply put in; one made otherwise (create secret, an edit) stays, so the
+    key names are read back and the Secret replaced when more than libsodium-key is left."""
     name = env_name(config.wal["encryption_key_secret"])
     if not environ.get(name):
         raise Stop(1, f"{name} is not set: is it in Bitwarden?")
-    server.run("k3s kubectl apply -f -", input=json.dumps(secret_manifest(config, environ[name])))
+    manifest = json.dumps(secret_manifest(config, environ[name]))
+    server.run("k3s kubectl apply -f -", input=manifest)
+    left = server.run(f"k3s kubectl -n {config.namespace} get secret {config.wal['secret']} -o '{KEY_NAMES}'").split()
+    if set(left) - {"libsodium-key"}:
+        server.run("k3s kubectl replace -f -", input=manifest)
 
 
 def pubsec_wheel(root: Path) -> str:

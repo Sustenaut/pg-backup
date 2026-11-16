@@ -58,7 +58,8 @@ class FakeKubectl:
     """Answers by the first matching argv prefix; keeps each argv and input."""
 
     def __init__(self, **answers):
-        self.answers = {"get statefulset": Ran(0, STATEFULSET), "logs": Ran(0, LOGS),
+        self.answers = {"go-template": Ran(0, "libsodium-key "), "replace": Ran(0, "secret/auth-wal replaced"),
+                        "get statefulset": Ran(0, STATEFULSET), "logs": Ran(0, LOGS),
                         "get secret": Ran(0, SECRET), "apply": Ran(0, "secret/auth-wal configured")} \
             | {key.replace("_", " "): answer for key, answer in answers.items()}
         self.argv: list[list[str]] = []
@@ -275,7 +276,7 @@ def test_fulfil_makes_the_encryption_key_and_puts_the_secret_on_stdin(walk):
     assert set(walk.bitwarden_writer.written) == {"auth-wal-key"}  # no bucket key: Workload Identity
     key, _ = walk.bitwarden_writer.written["auth-wal-key"]
     assert len(base64.b64decode(key)) == 32
-    assert walk.kubectl.argv == [["apply", "-f", "-"]]
+    assert walk.kubectl.argv[0] == ["apply", "-f", "-"] and ["replace", "-f", "-"] not in walk.kubectl.argv
     sent = json.loads(walk.kubectl.inputs[0])
     assert sent["metadata"] == {"name": "auth-wal", "namespace": "auth"}
     assert sent["data"] == {"libsodium-key": base64.b64encode(key.encode()).decode()}
@@ -288,6 +289,21 @@ def test_fulfil_keeps_the_key_bitwarden_has_and_puts_the_secret_back_with_it_alo
     assert walk.bitwarden_writer.written == {}
     assert got.details.count("   already in Bitwarden") == 1
     assert json.loads(walk.kubectl.inputs[0])["data"] == {"libsodium-key": base64.b64encode(b"a2V5").decode()}
+
+
+@pytest.mark.parametrize("replace, state", [(Ran(0, "secret/auth-wal replaced"), "ready"),
+                                            (Ran(1, "", "refused"), "unknown")])
+def test_a_secret_apply_leaves_a_bucket_key_in_is_replaced(walk, replace, state):
+    """A Secret made by create secret, or edited, keeps a key apply never put: read back, replaced."""
+    walk.values = {"auth-wal-key": "a2V5"}
+    walk.kubectl = FakeKubectl(**{"go-template": Ran(0, "gcs-key.json libsodium-key ")}, replace=replace)
+    got = pg_database.fulfil(Need(), walk)
+    assert got.state == state, got
+    assert ["replace", "-f", "-"] in walk.kubectl.argv
+    sent = json.loads(walk.kubectl.inputs[walk.kubectl.argv.index(["replace", "-f", "-"])])
+    assert set(sent["data"]) == {"libsodium-key"}
+    if state == "unknown":
+        assert "kubectl replace refused the WAL Secret auth-wal" in got.summary
 
 
 def test_fulfil_needs_a_writer_and_a_kubectl_that_takes_input(ctx):
