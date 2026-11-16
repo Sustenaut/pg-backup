@@ -1,0 +1,4 @@
+{
+  "category": "changed",
+  "change": "the WAL archive needs no key: the organization forbids service account keys, so the StatefulSet's ServiceAccount (wal.serviceaccount) acts as wal.account through Workload Identity, with an external_account credential in the ConfigMap wal.credential; wal.gcs_key_secret is gone. The WAL Secret holds libsodium-key alone (one with gcs-key.json is drift, which the fulfil fixes); setup-secrets and the fulfil make no bucket key; pg.database checks the StatefulSet's identity; a drill's restore pod runs as its scratch namespace's postgres, acting as the new read-only wal.restore_account, which terraform/wal-archive makes (restore_account_id)"
+}

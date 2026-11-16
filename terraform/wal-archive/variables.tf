@@ -55,3 +55,8 @@ variable "labels" {
   type        = map(string)
   default     = { managed-by = "terraform" }
 }
+
+variable "restore_account_id" {
+  description = "The account a drill's restore pod reads the archive as (pg-backup.json's wal.restore_account): it may only read the bucket, so a restore can never write into the live archive. It has no key: Workload Identity lets a scratch namespace's postgres act as it (Sustenaut/shared-infra's infra/services-identity.tf)."
+  type        = string
+}

@@ -7,3 +7,8 @@ output "account" {
   description = "The account's email: pg-backup.json's wal.account."
   value       = google_service_account.wal.email
 }
+
+output "restore_account" {
+  description = "The read-only restore account's email: pg-backup.json's wal.restore_account."
+  value       = google_service_account.restore.email
+}

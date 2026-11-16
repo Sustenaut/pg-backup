@@ -85,16 +85,23 @@ def test_the_server_quotes_each_argument(monkeypatch):
 
 
 def test_the_secret_is_made_from_the_environment(config, server):
-    environ = {"AUTH_WAL_GCS_KEY": "Z2Nz", "AUTH_WAL_KEY": "secret"}
+    environ = {"AUTH_WAL_KEY": "secret"}
+    server.on(r"go-template", "libsodium-key ")
     push(config, server, environ)
-    sent = json.loads(server.inputs[-1])
+    sent = json.loads(server.inputs[0])
     assert sent["metadata"] == {"name": "auth-wal", "namespace": "auth"}
-    assert sent["data"] == {"gcs-key.json": "Z2Nz", "libsodium-key": base64.b64encode(b"secret").decode()}
-    assert server.calls[-1] == "k3s kubectl apply -f -"
+    # The encryption key alone: the bucket is reached through Workload Identity, with no key.
+    assert sent["data"] == {"libsodium-key": base64.b64encode(b"secret").decode()}
+    assert server.calls[0] == "k3s kubectl apply -f -" and "k3s kubectl replace -f -" not in server.calls
+    assert "get secret auth-wal" in server.calls[1] and "go-template" in server.calls[1]
+    # A Secret apply leaves a bucket key in (made by create secret, or edited) is replaced.
+    server.on(r"go-template", "gcs-key.json libsodium-key ")
+    push(config, server, environ)
+    assert server.calls[-1] == "k3s kubectl replace -f -" and json.loads(server.inputs[-1]) == sent
     with pytest.raises(Stop, match="AUTH_WAL_KEY is not set"):
-        push(config, server, {"AUTH_WAL_GCS_KEY": "x"})
-    assert env_name("auth-wal-gcs-key") == "AUTH_WAL_GCS_KEY"
-    assert secret_manifest(config, "a", "b")["type"] == "Opaque"
+        push(config, server, {})
+    assert env_name("auth-wal-key") == "AUTH_WAL_KEY"
+    assert secret_manifest(config, "b")["type"] == "Opaque"
 
 
 class Runs:
@@ -115,29 +122,28 @@ def repo(tmp_path, config):
     return tmp_path
 
 
-def test_setup_makes_missing_keys_then_pushes(config, server, repo):
-    runs = Runs(failing=["test -n"])  # neither key is in Bitwarden yet
+def test_setup_makes_the_missing_key_then_pushes(config, server, repo):
+    runs = Runs(failing=["test -n"])  # the key is not in Bitwarden yet
     out = []
     setup(config, server, repo, say=out.append, run=runs, which=lambda t: "/usr/bin/" + t)
     joined = [" ".join(c) for c in runs.calls]
-    assert any(c.startswith("./pubsec service-account-key create --account sustenaut-auth-wal@") for c in joined)
+    assert not any("service-account-key" in c for c in joined)  # no bucket key is made
     assert any(c.startswith("uvx --from https://github.com/Sustenaut/pubsec/") and c.endswith("auth-wal-key " + c.split("auth-wal-key ", 1)[1]) for c in joined)
     assert joined[-1] == "./with-secrets ./backups/pg-backup setup-secrets --push"
     assert out[-1] == "   done"
 
 
-def test_setup_keeps_keys_already_there(config, server, repo):
+def test_setup_keeps_the_key_already_there(config, server, repo):
     runs = Runs()
     out = []
     setup(config, server, repo, say=out.append, run=runs, which=lambda t: t)
-    assert out.count("   already in Bitwarden") == 2
+    assert out.count("   already in Bitwarden") == 1
     assert pubsec_wheel(repo).endswith("pubsec-0.1.2-py3-none-any.whl")
 
 
 @pytest.mark.parametrize("failing, which, message", [
     ([], lambda t: None if t == "bws" else t, "bws is not installed"),
     (["buckets describe"], lambda t: t, "apply the Terraform"),
-    (["test -n", "service-account-key"], lambda t: t, "couldn't make auth-wal-gcs-key"),
     (["test -n", "uvx"], lambda t: t, "couldn't make auth-wal-key"),
     (["--push"], lambda t: t, "couldn't put the Secret"),
 ])

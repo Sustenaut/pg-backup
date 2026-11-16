@@ -1,9 +1,12 @@
-"""The WAL archive's two keys, made once into Bitwarden, and put in the cluster as the WAL
-Secret: the bucket account's key, which `./pubsec service-account-key create` writes itself,
-and WAL-G's libsodium key, 32 random bytes written with pubsec's own Bitwarden code, in memory.
-Losing the second makes the archive unreadable, so it is kept nowhere but Bitwarden and the
+"""The WAL archive's encryption key, made once into Bitwarden, and put in the cluster as the WAL
+Secret: WAL-G's libsodium key, 32 random bytes written with pubsec's own Bitwarden code, in
+memory. Losing it makes the archive unreadable, so it is kept nowhere but Bitwarden and the
 cluster. A key already in Bitwarden is not made again, so running this again (after a rebuild)
 only puts the Secret back. No value is printed or put on a command line.
+
+The bucket has no key: the StatefulSet's ServiceAccount acts as its account through Workload
+Identity (the organization forbids service account keys), with the credential file in the
+ConfigMap wal.credential names.
 
 It runs in the consuming repository's root, through its ./pubsec and ./with-secrets."""
 
@@ -50,22 +53,32 @@ def env_name(secret: str) -> str:
     return secret.upper().replace("-", "_")
 
 
-def secret_manifest(config: Config, gcs_key_b64: str, encryption_key: str) -> dict:
+def secret_manifest(config: Config, encryption_key: str) -> dict:
+    """The WAL Secret, libsodium-key alone: applied over one that held more, kubectl apply
+    takes the rest out (a bucket key, gcs-key.json, from before Workload Identity)."""
     return {
         "apiVersion": "v1", "kind": "Secret", "type": "Opaque",
         "metadata": {"name": config.wal["secret"], "namespace": config.namespace},
-        "data": {"gcs-key.json": gcs_key_b64, "libsodium-key": base64.b64encode(encryption_key.encode()).decode()},
+        "data": {"libsodium-key": base64.b64encode(encryption_key.encode()).decode()},
     }
 
 
+# A Secret's key names, and nothing of their values.
+KEY_NAMES = "go-template={{range $k, $v := .data}}{{$k}} {{end}}"
+
+
 def push(config: Config, server: Server, environ: dict = os.environ) -> None:
-    """Run through ./with-secrets: both keys are in the environment."""
-    names = [env_name(config.wal["gcs_key_secret"]), env_name(config.wal["encryption_key_secret"])]
-    for name in names:
-        if not environ.get(name):
-            raise Stop(1, f"{name} is not set: is it in Bitwarden?")
-    manifest = secret_manifest(config, environ[names[0]], environ[names[1]])
-    server.run("k3s kubectl apply -f -", input=json.dumps(manifest))
+    """Run through ./with-secrets: the encryption key is in the environment. apply takes out a
+    key only its own last apply put in; one made otherwise (create secret, an edit) stays, so the
+    key names are read back and the Secret replaced when more than libsodium-key is left."""
+    name = env_name(config.wal["encryption_key_secret"])
+    if not environ.get(name):
+        raise Stop(1, f"{name} is not set: is it in Bitwarden?")
+    manifest = json.dumps(secret_manifest(config, environ[name]))
+    server.run("k3s kubectl apply -f -", input=manifest)
+    left = server.run(f"k3s kubectl -n {config.namespace} get secret {config.wal['secret']} -o '{KEY_NAMES}'").split()
+    if set(left) - {"libsodium-key"}:
+        server.run("k3s kubectl replace -f -", input=manifest)
 
 
 def pubsec_wheel(root: Path) -> str:
@@ -79,7 +92,7 @@ def pubsec_wheel(root: Path) -> str:
 def setup(config: Config, server: Server, root: Path = Path("."), say: Callable[[str], None] = print,
           run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
           which: Callable[[str], str | None] = shutil.which) -> None:
-    for tool in ("gcloud", "ssh", "uvx", "bws"):
+    for tool in ("gcloud", "ssh", "uvx", "bws"):  # gcloud: the bucket is there
         if not which(tool):
             raise Stop(1, f"{tool} is not installed")
     for script in ("pubsec", "with-secrets"):
@@ -97,10 +110,6 @@ def setup(config: Config, server: Server, root: Path = Path("."), say: Callable[
         check = run(["./with-secrets", "sh", "-c", f'test -n "${{{env_name(secret)}:-}}"'], capture_output=True, cwd=root)
         return check.returncode == 0
 
-    def make_account_key(secret: str) -> None:
-        if run(["./pubsec", "service-account-key", "create", "--account", config.wal["account"], "--secret", secret], cwd=root).returncode != 0:
-            raise Stop(1, f"couldn't make {secret}")
-
     def make_encryption_key(secret: str, note: str) -> None:
         if run(["uvx", "--from", pubsec_wheel(root), "python", "-c", WRITE_KEY, secret, note], cwd=root).returncode != 0:
             raise Stop(1, f"couldn't make {secret}")
@@ -109,7 +118,7 @@ def setup(config: Config, server: Server, root: Path = Path("."), say: Callable[
         if run(["./with-secrets", "./backups/pg-backup", "setup-secrets", "--push"], cwd=root).returncode != 0:
             raise Stop(1, "couldn't put the Secret in the cluster")
 
-    make_keys(config, Keys(in_bitwarden, make_account_key, make_encryption_key, put_secret), say)
+    make_keys(config, Keys(in_bitwarden, make_encryption_key, put_secret), say)
 
 
 @dataclass(frozen=True)
@@ -118,29 +127,22 @@ class Keys:
     setup-secrets, through the deploy walk's Bitwarden writer and kubectl for the pg.database need.
     Each make or put raises Stop when it fails, with no value in its message."""
     in_bitwarden: Callable[[str], bool]
-    make_account_key: Callable[[str], None]  # the Bitwarden secret's name
     make_encryption_key: Callable[[str, str], None]  # the name, and the secret's note
     put_secret: Callable[[], None]
 
 
 def make_keys(config: Config, keys: Keys, say: Callable[[str], None] = print) -> list[str]:
-    """setup-secrets' three steps: each key made unless Bitwarden has it, then the WAL Secret put
-    in the cluster. Returns what it did, in words, with no value."""
+    """setup-secrets' two steps: the encryption key made unless Bitwarden has it, then the WAL
+    Secret put in the cluster. Returns what it did, in words, with no value."""
     done = []
-    gcs, key = config.wal["gcs_key_secret"], config.wal["encryption_key_secret"]
-    say(f"== 1. The bucket's key, {gcs}")
-    if keys.in_bitwarden(gcs):
-        say("   already in Bitwarden")
-    else:
-        keys.make_account_key(gcs)
-        done.append(f"made {gcs}")
-    say(f"== 2. WAL-G's encryption key, {key}")
+    key = config.wal["encryption_key_secret"]
+    say(f"== 1. WAL-G's encryption key, {key}")
     if keys.in_bitwarden(key):
         say("   already in Bitwarden")
     else:
         keys.make_encryption_key(key, encryption_note(config))
         done.append(f"made {key}")
-    say(f"== 3. Into the cluster, as the Secret {config.wal['secret']}")
+    say(f"== 2. Into the cluster, as the Secret {config.wal['secret']}")
     keys.put_secret()
     done.append(f"put Secret {config.wal['secret']} in {config.namespace}")
     say("   done")

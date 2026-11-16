@@ -86,3 +86,18 @@ resource "google_storage_bucket_iam_member" "wal_chunk_delete" {
     expression  = "resource.name.extract('projects/_/buckets/${google_storage_bucket.wal.name}/objects/{file}_chunks/') != ''"
   }
 }
+
+# The drill's restore pod reads the archive as this account, which may only read it: a
+# restored PostgreSQL never writes into the live archive, whatever its settings say.
+resource "google_service_account" "restore" {
+  project      = var.project
+  account_id   = var.restore_account_id
+  display_name = "${var.account_display_name} (restore, read-only)"
+  description  = "A pg-backup drill's restore pod: reads gs://${var.bucket}, writes nothing."
+}
+
+resource "google_storage_bucket_iam_member" "restore" {
+  bucket = google_storage_bucket.wal.name
+  role   = "roles/storage.objectViewer"
+  member = google_service_account.restore.member
+}
