@@ -3,8 +3,8 @@
   "corpus": {
     "domain": "pub:sha2-256:bykk5setvbgvqvprizrvfjj6cpiabu6v5m34vbycyws43rttrqea",
     "generation": {
-      "cid": "pub:sha2-256:fhdlmvqagxeno525tvro6vyykqdbssrwpm32o3ncaznsi5ve6zza",
-      "index": 3
+      "cid": "pub:sha2-256:zlzvdkjvduz4xbqwknpgkvvugunhp7aivdcnutkyqdr7eaw44m3a",
+      "index": 4
     },
     "imports": {},
     "key": "pub:sha2-256:obvmxytplejcrfubrolsvbkkcufxkhnuydakmyn2eewg72xxcq6q",
@@ -18,8 +18,8 @@
     ]
   },
   "publets": [
-    {"slug": "pkg.pg-backup", "kind": "doc", "tag": "PKG-PGBACK-11-2026", "source": "publets/pkg.pg-backup", "cid": "pub:sha2-256:z75f7gp45h3mof6uvxczt525x7enye6b6m3qxsiuud46lpgvksoq", "genesis": "pub:sha2-256:amt6hwkn7je75bjmc7g4yvdkqat6nah6xeewge2eycarogcpqela", "deps": ["pkg.pg-backup#identity", "pkg.pg-backup#release"]},
-    {"slug": "pkg.pg-backup#identity", "kind": "claim", "source": "publets/pkg.pg-backup", "cid": "pub:sha2-256:5h3bv73c2uexjm27l5hqow4v33uhyo6hzuilxlqojaktlvo7spdq", "genesis": "pub:sha2-256:fnooxom3eammjmo35uvw44zhkvmrjkebiz2ac47uikenkrhjtgia", "deps": []},
-    {"slug": "pkg.pg-backup#release", "kind": "claim", "source": "publets/pkg.pg-backup", "cid": "pub:sha2-256:rggbslkz7pgmalsenvk6e6nr6dv7chebb7akaewrlmemf3ntyteq", "genesis": "pub:sha2-256:vdmt6cxd6zo4sdj42dyy7p5iuwvj7zdwod3sue637ud4etgmzf6a", "deps": ["pkg.pg-backup#identity"]}
+    {"slug": "pkg.pg-backup", "kind": "doc", "tag": "PKG-PGBACK-11-2026", "source": "publets/pkg.pg-backup", "cid": "pub:sha2-256:kno26ylz6cqk3omz635v7ohlvmsekcfgriay76waxevhvvj4pewq", "genesis": "pub:sha2-256:amt6hwkn7je75bjmc7g4yvdkqat6nah6xeewge2eycarogcpqela", "deps": ["pkg.pg-backup#identity", "pkg.pg-backup#release"]},
+    {"slug": "pkg.pg-backup#identity", "kind": "claim", "source": "publets/pkg.pg-backup", "cid": "pub:sha2-256:a6xdjlts2elot5wwk3g2efw4gm373d3ei3wa6px644dxiakb6c5a", "genesis": "pub:sha2-256:fnooxom3eammjmo35uvw44zhkvmrjkebiz2ac47uikenkrhjtgia", "deps": []},
+    {"slug": "pkg.pg-backup#release", "kind": "claim", "source": "publets/pkg.pg-backup", "cid": "pub:sha2-256:nsres4eb2epcs2apmman24v25vdz7vmtfbjido4vbslk5rwaedbq", "genesis": "pub:sha2-256:vdmt6cxd6zo4sdj42dyy7p5iuwvj7zdwod3sue637ud4etgmzf6a", "deps": ["pkg.pg-backup#identity"]}
   ]
 }
