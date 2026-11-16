@@ -42,12 +42,27 @@ def test_a_restore_goes_into_a_closed_scratch_namespace(config, server):
     assert config.is_scratch(namespace)
     assert server.ran(rf"create namespace {namespace}")
     spec = json.loads(next(i for c, i in zip(server.calls, server.inputs) if i and '"List"' in i))
-    policy, pod = spec["items"]
+    policy, account, configmap, pod = spec["items"]
     assert policy["spec"] == {"podSelector": {}, "policyTypes": ["Ingress"]}
     env = {e["name"]: e.get("value") for e in pod["spec"]["containers"][0]["env"]}
     assert env["WALG_GS_PREFIX"] == "gs://sustenaut-auth-wal/keycloak"
+    # Read-only and keyless: the scratch namespace's postgres acts as the restore account.
+    assert account["metadata"] == {"name": "postgres", "namespace": namespace}
+    assert account["automountServiceAccountToken"] is False
+    assert pod["spec"]["serviceAccountName"] == "postgres" and pod["spec"]["automountServiceAccountToken"] is False
+    credential = json.loads(configmap["data"]["credential.json"])
+    assert credential["service_account_impersonation_url"].endswith(
+        "/sustenaut-auth-wal-read@sustenaut.iam.gserviceaccount.com:generateAccessToken")
+    (token,) = [v for v in pod["spec"]["volumes"] if v["name"] == "google-token"]
+    (source,) = token["projected"]["sources"]
+    assert source["serviceAccountToken"]["audience"] == credential["audience"]
+    mounts = {m["name"]: m["mountPath"] for m in pod["spec"]["containers"][0]["volumeMounts"]}
+    assert f"{mounts['google-token']}/{source['serviceAccountToken']['path']}" == credential["credential_source"]["file"]
+    assert env["GOOGLE_APPLICATION_CREDENTIALS"] == f"{mounts['wal-google-credential']}/credential.json"
+    assert not any("secret" in v for v in pod["spec"]["volumes"])  # no key file
     secret = json.loads(next(i for i in server.inputs if i and '"Secret"' in i))
     assert secret["metadata"] == {"name": "auth-wal", "namespace": namespace}
+    assert set(secret["data"]) == {"libsodium-key"}
     assert server.ran(r"backup-fetch .* base_2")
     assert server.ran(r"recovery_target_time = .*2026-11-06 07:05:00\+00")
     assert server.ran(r"wal-g st cat wal_005/%f\.br")
@@ -223,3 +238,10 @@ def test_a_restore_whose_postgresql_stopped_fails_at_once_with_its_log(config, s
     server.on(r"tail -n 8 /restore/postgres.log", "FATAL:  recovery ended before configured recovery target was reached\n")
     with pytest.raises(Stop, match="stopped during recovery; the end of its log:\nFATAL:  recovery ended"):
         restore(config, server, "latest", say=lambda s: None, sleep=lambda s: None)
+
+
+def test_a_live_credential_that_impersonates_nothing_stops_the_restore(config, server):
+    server.on(r"get configmap wal-google-credential -o json", json.dumps({"data": {"credential.json": "{}"}}))
+    with pytest.raises(Stop, match="holds no external_account credential that impersonates"):
+        restore(config, server, "latest", say=lambda s: None)
+

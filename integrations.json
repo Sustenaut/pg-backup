@@ -35,9 +35,8 @@
     {
       "plugin": "google.cloud",
       "paths": [
-        "src/pg_backup/need.py",
         "src/pg_backup/setup.py",
-        "tests/test_need.py"
+        "tests/conftest.py"
       ],
       "mode": "required"
     },

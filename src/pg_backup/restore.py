@@ -81,20 +81,43 @@ def oldest_backup(backups: list[dict]) -> str | None:
     return min((entry["time"] for entry in backups), default=None)
 
 
-def scratch_spec(config: Config, namespace: str, image: str) -> dict:
-    """The closed network policy and the restore pod, as one List for kubectl apply."""
+def reader_credential(credential: dict, config: Config) -> dict:
+    """The live credential file (wal.credential's credential.json), acting as the read-only
+    restore account instead: a restore reads the archive and can never write into it."""
+    url = str(credential.get("service_account_impersonation_url", ""))
+    if credential.get("type") != "external_account" or "/serviceAccounts/" not in url:
+        raise Stop(1, f"the ConfigMap {config.wal['credential']} holds no external_account credential that impersonates")
+    base = url.split("/serviceAccounts/", 1)[0]
+    return credential | {"service_account_impersonation_url":
+                         f"{base}/serviceAccounts/{config.wal['restore_account']}:generateAccessToken"}
+
+
+def scratch_spec(config: Config, namespace: str, image: str, credential: dict) -> dict:
+    """The closed network policy, the restore's ServiceAccount and credential ConfigMap, and the
+    restore pod, as one List for kubectl apply. The pod reaches the bucket as
+    wal.restore_account, read-only, through Workload Identity: its projected token has the
+    live credential's audience and lands where that credential reads it."""
     wal = config.wal
+    token_file = str(credential["credential_source"]["file"])
+    token_dir, token_path = token_file.rsplit("/", 1)
     env = [
         {"name": "PGDATA", "value": "/restore/pgdata"},
         {"name": "WALG_GS_PREFIX", "value": f"gs://{wal['bucket']}/{wal['prefix']}"},
-        {"name": "GOOGLE_APPLICATION_CREDENTIALS", "value": "/var/run/secrets/wal/gcs-key.json"},
+        {"name": "GOOGLE_APPLICATION_CREDENTIALS", "value": "/etc/wal-google/credential.json"},
         {"name": "WALG_LIBSODIUM_KEY", "valueFrom": {"secretKeyRef": {"name": wal["secret"], "key": "libsodium-key"}}},
         {"name": "WALG_LIBSODIUM_KEY_TRANSFORM", "value": "base64"},
     ]
+    account = {"apiVersion": "v1", "kind": "ServiceAccount",
+               "metadata": {"name": wal["serviceaccount"], "namespace": namespace},
+               "automountServiceAccountToken": False}
+    configmap = {"apiVersion": "v1", "kind": "ConfigMap",
+                 "metadata": {"name": wal["credential"], "namespace": namespace},
+                 "data": {"credential.json": json.dumps(credential, indent=2) + "\n"}}
     pod = {
         "apiVersion": "v1", "kind": "Pod",
         "metadata": {"name": "restore", "namespace": namespace},
         "spec": {
+            "serviceAccountName": wal["serviceaccount"],
             "automountServiceAccountToken": False,
             "restartPolicy": "Never",
             "securityContext": {"runAsUser": 999, "runAsGroup": 999, "fsGroup": 999},
@@ -102,11 +125,13 @@ def scratch_spec(config: Config, namespace: str, image: str) -> dict:
                 "name": "postgres", "image": image, "command": ["sleep", "86400"], "env": env,
                 "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}, "limits": {"memory": "512Mi"}},
                 "volumeMounts": [{"name": "restore", "mountPath": "/restore"},
-                                 {"name": "wal-key", "mountPath": "/var/run/secrets/wal", "readOnly": True}],
+                                 {"name": "google-token", "mountPath": token_dir, "readOnly": True},
+                                 {"name": "wal-google-credential", "mountPath": "/etc/wal-google", "readOnly": True}],
             }],
             "volumes": [{"name": "restore", "emptyDir": {}},
-                        {"name": "wal-key", "secret": {"secretName": wal["secret"],
-                                                       "items": [{"key": "gcs-key.json", "path": "gcs-key.json"}]}}],
+                        {"name": "google-token", "projected": {"sources": [{"serviceAccountToken": {
+                            "audience": credential["audience"], "path": token_path, "expirationSeconds": 3600}}]}},
+                        {"name": "wal-google-credential", "configMap": {"name": wal["credential"]}}],
         },
     }
     policy = {
@@ -114,12 +139,14 @@ def scratch_spec(config: Config, namespace: str, image: str) -> dict:
         "metadata": {"name": "closed", "namespace": namespace},
         "spec": {"podSelector": {}, "policyTypes": ["Ingress"]},
     }
-    return {"apiVersion": "v1", "kind": "List", "items": [policy, pod]}
+    return {"apiVersion": "v1", "kind": "List", "items": [policy, account, configmap, pod]}
 
 
 def copied_secret(secret: dict, namespace: str) -> dict:
-    return {key: secret[key] for key in ("apiVersion", "kind", "type", "data")} | {
-        "metadata": {"name": secret["metadata"]["name"], "namespace": namespace}}
+    """The WAL Secret, in the scratch namespace, with the encryption key alone."""
+    data = {k: v for k, v in (secret.get("data") or {}).items() if k == "libsodium-key"}
+    return {key: secret[key] for key in ("apiVersion", "kind", "type")} | {
+        "data": data, "metadata": {"name": secret["metadata"]["name"], "namespace": namespace}}
 
 
 class Database:
@@ -190,7 +217,9 @@ def _restore(config: Config, server: Server, target_text: str, namespace: str, m
     made()
     secret = json.loads(server.kubectl("-n", config.namespace, "get", "secret", config.wal["secret"], "-o", "json"))
     server.kubectl("apply", "-f", "-", input=json.dumps(copied_secret(secret, namespace)))
-    server.kubectl("apply", "-f", "-", input=json.dumps(scratch_spec(config, namespace, image)))
+    live = json.loads(server.kubectl("-n", config.namespace, "get", "configmap", config.wal["credential"], "-o", "json"))
+    credential = reader_credential(json.loads((live.get("data") or {}).get("credential.json") or "{}"), config)
+    server.kubectl("apply", "-f", "-", input=json.dumps(scratch_spec(config, namespace, image, credential)))
     server.kubectl("-n", namespace, "wait", "--for=condition=Ready", "pod/restore", "--timeout=5m")
     took("namespace and pod", step)
 

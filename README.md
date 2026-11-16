@@ -14,8 +14,8 @@ This repository holds the pieces a database needs, each released together:
 | Piece | What it is |
 |---|---|
 | `image/` | `ghcr.io/sustenaut/pg-backup:X.Y.Z-pg16`: PostgreSQL 16.14 with WAL-G 3.0.9, CA certificates, and `walg-loop`, which takes the nightly base backup and prints a status line |
-| `terraform/wal-archive/` | The bucket, its account (create and read only, plus deleting WAL-G's own upload chunks), and the lifecycle that deletes by age |
-| `src/pg_backup/` | `pg-backup`: restore to a moment into a scratch namespace, drill, put a restore back, and make the archive's keys |
+| `terraform/wal-archive/` | The bucket, its account (create and read only, plus deleting WAL-G's own upload chunks), a read-only restore account, and the lifecycle that deletes by age. Neither account has a key: Workload Identity lets the cluster's ServiceAccounts act as them |
+| `src/pg_backup/` | `pg-backup`: restore to a moment into a scratch namespace, drill, put a restore back, and make the archive's encryption key |
 | `consumer/pg-backup` | The script a consuming repository copies to `backups/pg-backup`, pinning one release |
 
 Nothing here knows which database it looks after. A consuming repository says so in
@@ -39,22 +39,34 @@ is Sustenaut's sign-in database.
      account_id           = "sustenaut-auth-wal"
      account_display_name = "Sustenaut auth WAL archive"
      account_description  = "WAL-G on the k3s server: archives the write-ahead log and nightly base backups."
+     restore_account_id   = "sustenaut-auth-wal-read"
      role_id              = "walChunkDelete" # a custom role is the project's: one per archive
    }
    ```
 
+   The organization forbids service account keys, so neither account has one. Workload
+   Identity (Sustenaut/shared-infra's `infra/services-identity.tf`) lets the StatefulSet's
+   ServiceAccount act as the archive's account, and a drill's scratch namespace's `postgres`
+   act as the read-only restore account, which can never write into the live archive.
+
 2. **The settings:** `backups/pg-backup.json` (the schema says what each one is), and
    `consumer/pg-backup` copied to `backups/pg-backup`. Check them with
    `./backups/pg-backup check`, which touches nothing.
-3. **The keys,** once: `./backups/pg-backup setup-secrets`, from the repository's root, which
+3. **The key,** once: `./backups/pg-backup setup-secrets`, from the repository's root, which
    needs its `./pubsec` and `./with-secrets`, gcloud, and a Bitwarden access token with write
-   access, asked for at a hidden prompt. It makes the account's key and WAL-G's encryption key in
-   Bitwarden and puts both in the cluster as the WAL Secret. A key already in Bitwarden is not
-   made again, so after a rebuild it only puts the Secret back. **Losing the encryption key makes
-   the archive unreadable.**
+   access, asked for at a hidden prompt. It makes WAL-G's encryption key in Bitwarden and puts it
+   in the cluster as the WAL Secret, `libsodium-key` alone. A key already in Bitwarden is not made
+   again, so after a rebuild it only puts the Secret back. **Losing the encryption key makes the
+   archive unreadable.**
 4. **The pod:** PostgreSQL from the image, archiving, and `walg-loop` beside it:
 
    ```yaml
+   serviceAccountName: postgres            # wal.serviceaccount, automountServiceAccountToken off
+   volumes:
+     - name: google-token                  # what the credential file trades for the account's access
+       projected: {sources: [{serviceAccountToken: {audience: "//iam.googleapis.com/projects/…/workloadIdentityPools/services/providers/…", path: token}}]}
+     - name: wal-google-credential         # wal.credential: an external_account credential.json
+       configMap: {name: wal-google-credential}
    containers:
      - name: postgres
        image: ghcr.io/sustenaut/pg-backup:0.1.0-pg16
@@ -62,7 +74,7 @@ is Sustenaut's sign-in database.
               -c, "archive_command=/usr/local/bin/wal-g wal-push %p"]
        env: &walg       # and the image's own POSTGRES_* and PGDATA
          - {name: WALG_GS_PREFIX, value: gs://sustenaut-auth-wal/keycloak}
-         - {name: GOOGLE_APPLICATION_CREDENTIALS, value: /var/run/secrets/wal/gcs-key.json}
+         - {name: GOOGLE_APPLICATION_CREDENTIALS, value: /etc/wal-google/credential.json}
          - {name: WALG_LIBSODIUM_KEY, valueFrom: {secretKeyRef: {name: auth-wal, key: libsodium-key}}}
          - {name: WALG_LIBSODIUM_KEY_TRANSFORM, value: base64}
          - {name: WALG_PREVENT_WAL_OVERWRITE, value: "true"}
@@ -71,7 +83,9 @@ is Sustenaut's sign-in database.
        command: [/usr/local/bin/walg-loop]   # with PGHOST, PGUSER, PGDATABASE, PGPASSWORD too
    ```
 
-   Both run as uid 999 and mount the data volume and the Secret's `gcs-key.json`.
+   Both run as uid 999 and mount the data volume, the token (at the directory the credential's
+   `credential_source.file` names) and the ConfigMap at `/etc/wal-google`. WAL-G (3.0.9, Go's
+   Google libraries) reads the external_account file itself.
    `PGBACKUP_BASE_AT` (HHMM, UTC, by default `0247`) sets the nightly base backup, and
    `PGBACKUP_STATUS_EVERY` (minutes, by default 5) the status line:
    `{"fact": "wal_archive", "last_archived_time": …, "failed_count": …, "last_backup": …}`.
@@ -103,21 +117,24 @@ names.
 **The check** (6 s, read-only) is the worst of:
 
 1. `backups/pg-backup.json` as `check` reads it, in the deploy's namespace: else drift, with its first problem.
-2. The StatefulSet, there and ready: else missing.
+2. The StatefulSet, there and ready: else missing. Ready, it must reach the bucket with no key:
+   it runs as `wal.serviceaccount`, has a projected token and the ConfigMap `wal.credential`, and
+   its database and sidecar containers name that ConfigMap's `credential.json` in
+   `GOOGLE_APPLICATION_CREDENTIALS`: else drift.
 3. The last `wal_archive` status lines in the sidecar's last 50 log lines: drift when more archiving
    failed since the line before, when nothing was archived for 10 minutes while `pg_wal` grew, or
    when the last base backup is more than 26 hours old; unknown when there is no such line (the pod
    isn't on pg-backup's image).
-4. The WAL Secret, with keys `gcs-key.json` and `libsodium-key` (their names alone are read).
+4. The WAL Secret, with `libsodium-key` and nothing else (their names alone are read): one that still
+   holds a bucket key, `gcs-key.json`, is drift, and the fulfil puts the Secret back without it.
 
 kubectl that may not read something is unknown, naming the access it needs. The drill isn't in the
 state yet, since no drill leaves a fact the check can read: a healthy database is ready, with the
 drill in the details and "run `./backups/pg-backup drill --wait` and record it" as what to do.
 
 **Fulfil** (grade auto, up to 300 s) does what `setup-secrets` does, through the walk's Bitwarden
-writer and kubectl: the account's key (from gcloud) and the encryption key are made unless Bitwarden
-has them, and the WAL Secret is applied with its manifest on kubectl's input, never on a command
-line. A walk without a Bitwarden write token says it needs one, and is run at a terminal.
+writer and kubectl: the encryption key is made unless Bitwarden has it, and the WAL Secret is
+applied with it alone, its manifest on kubectl's input, never on a command line. A walk without a Bitwarden write token says it needs one, and is run at a terminal.
 
 ## The commands
 
@@ -136,7 +153,10 @@ server as `root@<server>` over ssh and runs `k3s kubectl` there.
 A bad `backups/pg-backup.json` is exit 2 for every command.
 
 - **restore** makes `<namespace>-restore-<time>`, closed to all traffic by a network policy,
-  copies the WAL Secret into it, and runs the image the live StatefulSet runs. It fetches the
+  copies the WAL Secret's encryption key into it, and runs the image the live StatefulSet runs,
+  as that namespace's own `postgres`: the live `wal.credential`, acting as `wal.restore_account`
+  instead, so it reads the archive and can never write into it (PostgreSQL there runs with
+  `archive_mode` off too). It fetches the
   newest base backup from before the moment, replays WAL to it, promotes, and compares the
   check query's rows with live. It never touches the live namespace.
 - **promote** runs only at a terminal, after you type `promote <namespace>`. It runs the dump

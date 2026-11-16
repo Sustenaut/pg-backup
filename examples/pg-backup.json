@@ -10,13 +10,25 @@
     "bucket": "sustenaut-auth-wal",
     "prefix": "keycloak",
     "account": "sustenaut-auth-wal@sustenaut.iam.gserviceaccount.com",
-    "gcs_key_secret": "auth-wal-gcs-key",
+    "restore_account": "sustenaut-auth-wal-read@sustenaut.iam.gserviceaccount.com",
+    "serviceaccount": "postgres",
+    "credential": "wal-google-credential",
     "encryption_key_secret": "auth-wal-key"
   },
-  "dump": {"cronjob": "backup", "bucket": "sustenaut-auth-backups"},
-  "app": {"deployment": "keycloak", "selector": "app=keycloak"},
+  "dump": {
+    "cronjob": "backup",
+    "bucket": "sustenaut-auth-backups"
+  },
+  "app": {
+    "deployment": "keycloak",
+    "selector": "app=keycloak"
+  },
   "check": {
     "query": "select r.name || ' ' || count(u.id) from realm r left join user_entity u on u.realm_id = r.id group by r.name order by r.name",
-    "required": ["family", "sustenaut", "team"]
+    "required": [
+      "family",
+      "sustenaut",
+      "team"
+    ]
   }
 }

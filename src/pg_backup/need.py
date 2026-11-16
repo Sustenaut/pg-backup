@@ -1,7 +1,8 @@
 """pg.database: a need type for pubkit's deploy walk, offered under the entry point group
 `sustenaut.needs`. It checks that a database pg-backup looks after is sound (its settings, its
-StatefulSet, the wal-g sidecar's last status lines, and the WAL Secret), and fulfils it by making
-the archive's keys, as setup-secrets does, through the walk's Bitwarden writer and kubectl.
+StatefulSet and how it reaches the bucket with no key, the wal-g sidecar's last status lines,
+and the WAL Secret), and fulfils it by making the archive's encryption key, as setup-secrets
+does, through the walk's Bitwarden writer and kubectl.
 
 It has what pubkit's NeedType has by duck typing and imports nothing from pubkit, so pg-backup
 needs no pubkit to install. Every failure is a Result, never an exception. No value of a key
@@ -31,7 +32,7 @@ WORST = ("missing", "drift", "blocked", "unknown", "ready")  # what a need's sta
 ARCHIVE_LAG = timedelta(minutes=10)
 BASE_BACKUP_AGE = timedelta(hours=26)
 TAIL = 50
-SECRET_KEYS = ("gcs-key.json", "libsodium-key")
+SECRET_KEYS = ("libsodium-key",)
 DRILL_FIX = "run ./backups/pg-backup drill --wait and record it"
 NO_WRITER = "needs a Bitwarden write token: run the walk at a terminal"
 
@@ -182,7 +183,7 @@ class PgDatabase:
     }
 
     def __init__(self, run: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> None:
-        self.run = run  # gcloud, for fulfil's account key
+        self.run = run
 
     def default_name(self, params: Mapping[str, Any]) -> str | None:
         return params.get("statefulset", "postgres")
@@ -228,7 +229,7 @@ class PgDatabase:
         config, bad = self.settings(need, ctx)
         if bad:
             return result(ctx, *bad)
-        parts = [self.statefulset_state(ctx, ns, statefulset)]
+        parts = [self.statefulset_state(ctx, ns, statefulset, config, container)]
         if parts[0][0] == "ready":
             parts.append(self.archive_part(ctx, ns, statefulset, container))
         parts.append(self.secret_state(ctx, ns, config.wal["secret"]))
@@ -236,10 +237,11 @@ class PgDatabase:
         details.append(f"drill: none recorded yet; {DRILL_FIX}")
         state, summary, fix = worst(parts)
         if state == "ready":
-            summary = f"{statefulset} in {ns} is ready, {parts[1][1]}, and its WAL Secret has both keys"
+            summary = f"{statefulset} in {ns} is ready, {parts[1][1]}, with no bucket key"
         return result(ctx, state, summary, fix or DRILL_FIX, details)
 
-    def statefulset_state(self, ctx: Any, ns: str, name: str) -> tuple[str, str, str]:
+    def statefulset_state(self, ctx: Any, ns: str, name: str, config: Any = None,
+                          sidecar: str = "wal-g") -> tuple[str, str, str]:
         ran = kubectl(ctx, ["-n", ns, "get", "statefulset", name, "-o", "json"])
         if ran.returncode != 0:
             if not_found(ran):
@@ -254,6 +256,10 @@ class PgDatabase:
         if wanted < 1 or ready < wanted:
             return ("missing", f"StatefulSet {name} in {ns} is not ready: {ready} of {wanted}",
                     f"kubectl -n {ns} rollout status statefulset/{name}, and its pod's events")
+        keyless = identity(found, config, sidecar) if config is not None else ""
+        if keyless:
+            return "drift", keyless, ("give the StatefulSet pg-backup's README's Workload Identity: its "
+                                      "ServiceAccount, the projected token and the credential ConfigMap")
         return "ready", f"StatefulSet {name} in {ns} is ready", ""
 
     def archive_part(self, ctx: Any, ns: str, statefulset: str, container: str) -> tuple[str, str, str]:
@@ -276,7 +282,11 @@ class PgDatabase:
         lacking = [key for key in SECRET_KEYS if key not in keys]
         if lacking:
             return "drift", f"the WAL Secret {name} has no {', '.join(lacking)}", fix
-        return "ready", f"the WAL Secret {name} has {', '.join(SECRET_KEYS)}", ""
+        extra = sorted(keys - set(SECRET_KEYS))
+        if extra:
+            # A bucket key from before Workload Identity: the fulfil puts the Secret back without it.
+            return "drift", f"the WAL Secret {name} also has {', '.join(extra)}, which nothing reads now", fix
+        return "ready", f"the WAL Secret {name} has {', '.join(SECRET_KEYS)} alone", ""
 
     def fulfil(self, need: Any, ctx: Any) -> Any:
         try:
@@ -307,51 +317,53 @@ class PgDatabase:
                 raise Stop(1, f"Bitwarden refused {name} ({type(error).__name__})") from None
             made[name] = text
 
-        def make_account_key(name: str) -> None:
-            account = config.wal["account"]
-            project = account.split("@", 1)[1].split(".", 1)[0]
-            done = self.gcloud(account, project, "create", "-")
-            try:
-                key_id = json.loads(done)["private_key_id"]
-            except (ValueError, KeyError, TypeError):
-                raise Stop(1, f"gcloud printed something other than a key: look for a new key on {account}, and delete it") from None
-            try:
-                write(name, base64.b64encode(done.encode()).decode(), f"Key {key_id} of {account}")
-            except Stop:
-                self.gcloud(account, project, "delete", key_id, "--quiet")
-                raise Stop(1, f"Bitwarden refused {name}; key {key_id} was deleted from Google, as nothing holds it") from None
-
         def make_encryption_key(name: str, note: str) -> None:
             write(name, base64.b64encode(os.urandom(32)).decode(), note)
 
         def put_secret() -> None:
-            gcs, key = value(config.wal["gcs_key_secret"]), value(config.wal["encryption_key_secret"])
-            if not gcs or not key:
-                raise Stop(1, "a key Bitwarden has could not be read back to put in the Secret")
-            manifest = json.dumps(secret_manifest(config, gcs, key)).encode()
+            key = value(config.wal["encryption_key_secret"])
+            if not key:
+                raise Stop(1, "the key Bitwarden has could not be read back to put in the Secret")
+            manifest = json.dumps(secret_manifest(config, key)).encode()
             ran = ctx.kubectl(["apply", "-f", "-"], input=manifest)
             if ran.returncode != 0:
                 raise Stop(1, f"kubectl apply refused the WAL Secret {config.wal['secret']} (exit {ran.returncode})")
 
         said: list[str] = []
         try:
-            done = make_keys(config, Keys(lambda name: bool(value(name)), make_account_key, make_encryption_key, put_secret),
+            done = make_keys(config, Keys(lambda name: bool(value(name)), make_encryption_key, put_secret),
                              say=said.append)
         except Stop as stop:
             return result(ctx, "unknown", str(stop), fix="./backups/pg-backup setup-secrets, at a terminal", details=said)
         return result(ctx, "ready", "; ".join(done), details=said)
 
-    def gcloud(self, account: str, project: str, *args: str) -> str:
-        """gcloud iam service-accounts keys ARGS: what it printed, or Stop with its last line."""
-        try:
-            done = self.run(["gcloud", "iam", "service-accounts", "keys", *args, f"--iam-account={account}",
-                             f"--project={project}"], capture_output=True, text=True, check=False)
-        except FileNotFoundError:
-            raise Stop(1, "gcloud is not installed") from None
-        if done.returncode != 0:
-            last = (re.sub(r"\s+", " ", done.stderr or "").strip() or f"exit {done.returncode}")[:200]
-            raise Stop(1, f"gcloud refused: {last}")
-        return done.stdout
+
+def identity(found: dict, config: Any, sidecar: str) -> str:
+    """Why the StatefulSet would need a bucket key, or "": it runs as wal.serviceaccount, has a
+    projected service-account token and the ConfigMap wal.credential, and its database and
+    wal-g containers both name the ConfigMap's credential.json in GOOGLE_APPLICATION_CREDENTIALS.
+    Only the spec is read: no value is in it."""
+    spec = ((found.get("spec") or {}).get("template") or {}).get("spec") or {}
+    wal = config.wal
+    if spec.get("serviceAccountName") != wal["serviceaccount"]:
+        return f"StatefulSet {config.statefulset} does not run as {wal['serviceaccount']}"
+    volumes = spec.get("volumes") or []
+    tokens = [v["name"] for v in volumes if any("serviceAccountToken" in source for source in
+                                                (v.get("projected") or {}).get("sources") or [])]
+    credential = [v["name"] for v in volumes if (v.get("configMap") or {}).get("name") == wal["credential"]]
+    if not tokens or not credential:
+        return f"StatefulSet {config.statefulset} has no projected token or no ConfigMap {wal['credential']}"
+    for name in (config.container, sidecar):
+        container = next((c for c in spec.get("containers") or [] if c.get("name") == name), None)
+        if container is None:
+            return f"StatefulSet {config.statefulset} has no container {name}"
+        mounts = {m.get("name"): m.get("mountPath", "") for m in container.get("volumeMounts") or []}
+        env = {e.get("name"): e.get("value") for e in container.get("env") or []}
+        wanted = f"{mounts.get(credential[0], '').rstrip('/')}/credential.json"
+        if credential[0] not in mounts or not any(t in mounts for t in tokens) or \
+                env.get("GOOGLE_APPLICATION_CREDENTIALS") != wanted:
+            return f"{name} in StatefulSet {config.statefulset} does not reach the bucket through {wal['credential']}"
+    return ""
 
 
 pg_database = PgDatabase()

@@ -62,6 +62,16 @@ class FakeServer:
 ROWS = "family 4\nmaster 2\nsustenaut 0\nteam 2"
 SECRET = json.dumps({"apiVersion": "v1", "kind": "Secret", "type": "Opaque", "data": {"libsodium-key": "a2V5"},
                      "metadata": {"name": "auth-wal", "namespace": "auth", "uid": "x"}})
+LIVE_CREDENTIAL = {
+    "type": "external_account",
+    "audience": "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/services/providers/k3s",
+    "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+    "token_url": "https://sts.googleapis.com/v1/token",
+    "credential_source": {"file": "/var/run/secrets/google/token"},
+    "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+                                         "sustenaut-auth-wal@sustenaut.iam.gserviceaccount.com:generateAccessToken"}
+CREDENTIAL = json.dumps({"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "wal-google-credential"},
+                         "data": {"credential.json": json.dumps(LIVE_CREDENTIAL)}})
 BACKUPS = json.dumps([{"backup_name": "base_1", "time": "2026-11-06T06:14:28.115Z"},
                       {"backup_name": "base_2", "time": "2026-11-06T07:01:00Z"}])
 
@@ -80,6 +90,7 @@ def server():
     fake = FakeServer()
     fake.on(r"get statefulset postgres", "ghcr.io/sustenaut/pg-backup:0.1.0-pg16")
     fake.on(r"get secret auth-wal -o json", SECRET)
+    fake.on(r"get configmap wal-google-credential -o json", CREDENTIAL)
     fake.on(r"command -v wal-g", "/usr/local/bin/wal-g\n")
     fake.on(r"backup-list --json", BACKUPS)
     fake.on(r"pg_is_in_recovery", "f\n")

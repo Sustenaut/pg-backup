@@ -3,7 +3,6 @@ input, a fixed clock, and a fake Bitwarden writer."""
 
 import base64
 import json
-import subprocess
 import sys
 import types
 from dataclasses import dataclass, field
@@ -36,8 +35,22 @@ def fact(**kw):
     return json.dumps(out | kw)
 
 
-STATEFULSET = json.dumps({"spec": {"replicas": 1}, "status": {"readyReplicas": 1}})
-SECRET = json.dumps({"data": {"gcs-key.json": "Z2Nz", "libsodium-key": "a2V5"}})
+def keyless(**change):
+    """The StatefulSet's pod spec reaching the bucket with no key, as pg-backup's README has it."""
+    mounts = [{"name": "google-token", "mountPath": "/var/run/secrets/google"},
+              {"name": "wal-google-credential", "mountPath": "/etc/wal-google"}]
+    env = [{"name": "GOOGLE_APPLICATION_CREDENTIALS", "value": "/etc/wal-google/credential.json"}]
+    spec = {"serviceAccountName": "postgres",
+            "volumes": [{"name": "google-token", "projected": {"sources": [{"serviceAccountToken": {
+                "audience": "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/services/"
+                            "providers/k3s", "path": "token"}}]}},
+                        {"name": "wal-google-credential", "configMap": {"name": "wal-google-credential"}}],
+            "containers": [{"name": n, "env": env, "volumeMounts": mounts} for n in ("postgres", "wal-g")]}
+    return spec | change
+
+
+STATEFULSET = json.dumps({"spec": {"replicas": 1, "template": {"spec": keyless()}}, "status": {"readyReplicas": 1}})
+SECRET = json.dumps({"data": {"libsodium-key": "a2V5"}})
 LOGS = "\n".join(["waiting", fact(), "wal-g: INFO: pushed", fact()])
 
 
@@ -116,7 +129,7 @@ def test_the_type_has_what_pubkit_checks():
 def test_a_healthy_database_is_ready_with_the_drill_in_details(ctx):
     got = pg_database.check(Need(), ctx)
     assert got.state == "ready", got
-    assert got.summary == "postgres in auth is ready, archiving; last base backup 2026-11-08 02:47 UTC, and its WAL Secret has both keys"
+    assert got.summary == "postgres in auth is ready, archiving; last base backup 2026-11-08 02:47 UTC, with no bucket key"
     assert any(d.startswith("drill: none recorded yet") for d in got.details)
     assert got.fix == "run ./backups/pg-backup drill --wait and record it"
     assert ["-n", "auth", "logs", "postgres-0", "-c", "wal-g", "--tail=50"] in ctx.kubectl.argv
@@ -183,7 +196,11 @@ def test_an_old_archive_time_is_fine_while_nothing_is_written():
 
 
 def test_logs_kubectl_may_not_read_is_unknown(ctx):
-    ctx.kubectl = FakeKubectl(logs=Ran(1, "", "pods \"postgres-0\" is forbidden: cannot get resource pods/log"))
+    spec = keyless()
+    spec["containers"][1] = spec["containers"][1] | {"name": "sidecar"}
+    ctx.kubectl = FakeKubectl(logs=Ran(1, "", "pods \"postgres-0\" is forbidden: cannot get resource pods/log"),
+                              get_statefulset=Ran(0, json.dumps({"spec": {"replicas": 1, "template": {"spec": spec}},
+                                                                 "status": {"readyReplicas": 1}})))
     got = pg_database.check(Need(params={"container": "sidecar"}), ctx)
     assert got.state == "unknown" and "pods/log of postgres-0's sidecar" in got.summary
 
@@ -191,6 +208,8 @@ def test_logs_kubectl_may_not_read_is_unknown(ctx):
 @pytest.mark.parametrize("answer, state, words", [
     (Ran(1, "", 'Error from server (NotFound): secrets "auth-wal" not found'), "missing", "WAL Secret auth-wal is not in auth"),
     (Ran(0, json.dumps({"data": {"gcs-key.json": "x"}})), "drift", "has no libsodium-key"),
+    (Ran(0, json.dumps({"data": {"gcs-key.json": "x", "libsodium-key": "a2V5"}})), "drift",
+     "also has gcs-key.json, which nothing reads now"),
     (Ran(1, "", "secrets is forbidden"), "unknown", "may not read secrets"),
     (Ran(0, "[]"), "unknown", "is not JSON"),
 ])
@@ -242,18 +261,6 @@ def test_a_long_summary_is_cut_as_pubkit_cuts_it():
     assert len(Result("ready", "x" * 300).summary) == 120
 
 
-class Gcloud:
-    def __init__(self, code=0, printed=None):
-        self.calls = []
-        self.code = code
-        self.printed = printed if printed is not None else json.dumps({"private_key_id": "k1", "private_key": CANARY})
-
-    def __call__(self, argv, **kw):
-        self.calls.append(argv)
-        out = self.printed if argv[4] == "create" else ""
-        return subprocess.CompletedProcess(argv, self.code, out, "ERROR: denied" if self.code else "")
-
-
 @pytest.fixture
 def walk(ctx):
     ctx.bitwarden_writer = Writer()
@@ -261,31 +268,26 @@ def walk(ctx):
     return ctx
 
 
-def test_fulfil_makes_both_keys_and_puts_the_secret_on_stdin(walk):
-    gcloud = Gcloud()
-    got = PgDatabase(run=gcloud).fulfil(Need(), walk)
+def test_fulfil_makes_the_encryption_key_and_puts_the_secret_on_stdin(walk):
+    got = pg_database.fulfil(Need(), walk)
     assert got.state == "ready", got
-    assert got.summary == "made auth-wal-gcs-key; made auth-wal-key; put Secret auth-wal in auth"
-    assert gcloud.calls[0][:6] == ["gcloud", "iam", "service-accounts", "keys", "create", "-"]
-    assert "--project=sustenaut" in gcloud.calls[0]
-    gcs, note = walk.bitwarden_writer.written["auth-wal-gcs-key"]
-    assert note == "Key k1 of sustenaut-auth-wal@sustenaut.iam.gserviceaccount.com"
+    assert got.summary == "made auth-wal-key; put Secret auth-wal in auth"
+    assert set(walk.bitwarden_writer.written) == {"auth-wal-key"}  # no bucket key: Workload Identity
     key, _ = walk.bitwarden_writer.written["auth-wal-key"]
     assert len(base64.b64decode(key)) == 32
     assert walk.kubectl.argv == [["apply", "-f", "-"]]
     sent = json.loads(walk.kubectl.inputs[0])
     assert sent["metadata"] == {"name": "auth-wal", "namespace": "auth"}
-    assert sent["data"] == {"gcs-key.json": gcs, "libsodium-key": base64.b64encode(key.encode()).decode()}
+    assert sent["data"] == {"libsodium-key": base64.b64encode(key.encode()).decode()}
 
 
-def test_fulfil_skips_keys_bitwarden_has(walk):
-    walk.values = {"auth-wal-gcs-key": "Z2Nz", "auth-wal-key": "a2V5"}
-    gcloud = Gcloud()
-    got = PgDatabase(run=gcloud).fulfil(Need(), walk)
+def test_fulfil_keeps_the_key_bitwarden_has_and_puts_the_secret_back_with_it_alone(walk):
+    walk.values = {"auth-wal-key": "a2V5"}
+    got = pg_database.fulfil(Need(), walk)
     assert got.state == "ready" and got.summary == "put Secret auth-wal in auth"
-    assert gcloud.calls == [] and walk.bitwarden_writer.written == {}
-    assert got.details.count("   already in Bitwarden") == 2
-    assert json.loads(walk.kubectl.inputs[0])["data"]["gcs-key.json"] == "Z2Nz"
+    assert walk.bitwarden_writer.written == {}
+    assert got.details.count("   already in Bitwarden") == 1
+    assert json.loads(walk.kubectl.inputs[0])["data"] == {"libsodium-key": base64.b64encode(b"a2V5").decode()}
 
 
 def test_fulfil_needs_a_writer_and_a_kubectl_that_takes_input(ctx):
@@ -299,36 +301,18 @@ def test_fulfil_needs_a_writer_and_a_kubectl_that_takes_input(ctx):
 
 def test_fulfil_with_bad_settings_touches_nothing(walk):
     (walk.root / "backups" / "pg-backup.json").write_text("{}")
-    gcloud = Gcloud()
-    assert PgDatabase(run=gcloud).fulfil(Need(), walk).state == "drift"
-    assert gcloud.calls == [] and walk.kubectl.argv == []
-
-
-@pytest.mark.parametrize("gcloud, kubectl, words", [
-    (Gcloud(code=1), FakeKubectl(), "gcloud refused: ERROR: denied"),
-    (Gcloud(printed="Created key, but here it is: " + CANARY), FakeKubectl(), "printed something other than a key"),
-    (Gcloud(), FakeKubectl(apply=Ran(1, "", "the server refused")), "kubectl apply refused the WAL Secret auth-wal"),
-])
-def test_fulfil_failures_are_results(walk, gcloud, kubectl, words):
-    walk.kubectl = kubectl
-    got = PgDatabase(run=gcloud).fulfil(Need(), walk)
-    assert got.state == "unknown" and words in got.summary
-
-
-def test_a_key_bitwarden_refuses_is_deleted_from_google(walk):
-    walk.bitwarden_writer = Writer(fails=True)
-    gcloud = Gcloud()
-    got = PgDatabase(run=gcloud).fulfil(Need(), walk)
-    assert got.state == "unknown" and "key k1 was deleted from Google" in got.summary
-    assert gcloud.calls[1][4:7] == ["delete", "k1", "--quiet"]
+    assert pg_database.fulfil(Need(), walk).state == "drift"
     assert walk.kubectl.argv == []
 
 
-def test_no_gcloud_is_a_result(walk):
-    def missing(argv, **kw):
-        raise FileNotFoundError("gcloud")
-    got = PgDatabase(run=missing).fulfil(Need(), walk)
-    assert got.state == "unknown" and got.summary == "gcloud is not installed"
+@pytest.mark.parametrize("writer, kubectl, words", [
+    (Writer(fails=True), FakeKubectl(), "Bitwarden refused auth-wal-key (RuntimeError)"),
+    (Writer(), FakeKubectl(apply=Ran(1, "", "the server refused")), "kubectl apply refused the WAL Secret auth-wal"),
+])
+def test_fulfil_failures_are_results(walk, writer, kubectl, words):
+    walk.bitwarden_writer, walk.kubectl = writer, kubectl
+    got = pg_database.fulfil(Need(), walk)
+    assert got.state == "unknown" and words in got.summary
 
 
 def test_a_fault_in_fulfil_is_a_result(walk):
@@ -344,43 +328,55 @@ def every_field(got) -> str:
 @pytest.mark.parametrize("case", ["made", "known", "refused"])
 def test_the_canary_never_shows_and_reaches_kubectl_on_stdin(walk, capsys, case):
     """A key's value is in no Result field, no output, and no argv: kubectl gets it on its input."""
-    gcloud = Gcloud()
     if case == "known":
-        walk.values = {"auth-wal-gcs-key": CANARY, "auth-wal-key": CANARY}
+        walk.values = {"auth-wal-key": CANARY}
     if case == "refused":
-        walk.values = {"auth-wal-gcs-key": CANARY}
         walk.bitwarden_writer = Writer(fails=True)
         walk.kubectl = FakeKubectl(apply=Ran(1, CANARY, CANARY))
-    got = PgDatabase(run=gcloud).fulfil(Need(), walk)
+    got = pg_database.fulfil(Need(), walk)
     checked = pg_database.check(Need(), walk)
     out = capsys.readouterr()
     for text in (every_field(got), every_field(checked), out.out, out.err):
         assert CANARY not in text
         assert base64.b64encode(CANARY.encode()).decode()[:20] not in text
-    for argv in walk.kubectl.argv + gcloud.calls:
+    for argv in walk.kubectl.argv:
         assert not any(CANARY in arg for arg in argv)
-    if case != "refused":
+    if case == "known":
         sent = walk.kubectl.inputs[walk.kubectl.argv.index(["apply", "-f", "-"])]
-        data = json.loads(sent)["data"]
-        if case == "known":
-            assert data["gcs-key.json"] == CANARY
-        else:
-            assert CANARY in base64.b64decode(data["gcs-key.json"]).decode()
+        assert base64.b64decode(json.loads(sent)["data"]["libsodium-key"]).decode() == CANARY
 
 
 def test_make_keys_says_what_setup_secrets_said():
     from pg_backup.config import load
     config = load(EXAMPLE)
     out, calls = [], []
-    keys = Keys(lambda name: name == "auth-wal-key", lambda name: calls.append(("account", name)),
-                lambda name, note: calls.append(("encryption", name)), lambda: calls.append(("put",)))
-    assert make_keys(config, keys, say=out.append) == ["made auth-wal-gcs-key", "put Secret auth-wal in auth"]
-    assert out == ["== 1. The bucket's key, auth-wal-gcs-key", "== 2. WAL-G's encryption key, auth-wal-key",
-                   "   already in Bitwarden", "== 3. Into the cluster, as the Secret auth-wal", "   done"]
-    assert calls == [("account", "auth-wal-gcs-key"), ("put",)]
+    keys = Keys(lambda name: False, lambda name, note: calls.append(("encryption", name)),
+                lambda: calls.append(("put",)))
+    assert make_keys(config, keys, say=out.append) == ["made auth-wal-key", "put Secret auth-wal in auth"]
+    assert out == ["== 1. WAL-G's encryption key, auth-wal-key", "== 2. Into the cluster, as the Secret auth-wal",
+                   "   done"]
+    assert calls == [("encryption", "auth-wal-key"), ("put",)]
 
 
 def test_the_entry_point_names_the_instance():
     text = (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text()
     assert 'pg-database = "pg_backup.need:pg_database"' in text
     assert isinstance(module.pg_database, PgDatabase)
+
+
+@pytest.mark.parametrize("change, words", [
+    ({"serviceAccountName": "default"}, "does not run as postgres"),
+    ({"volumes": []}, "has no projected token or no ConfigMap wal-google-credential"),
+    ({"containers": keyless()["containers"][:1]}, "has no container wal-g"),
+    ({"containers": [{"name": "postgres", "env": [{"name": "GOOGLE_APPLICATION_CREDENTIALS",
+                                                   "value": "/var/run/secrets/wal/gcs-key.json"}],
+                      "volumeMounts": keyless()["containers"][0]["volumeMounts"]}, keyless()["containers"][1]]},
+     "postgres in StatefulSet postgres does not reach the bucket through wal-google-credential"),
+])
+def test_a_statefulset_that_would_need_a_bucket_key_is_drift(ctx, change, words):
+    answer = Ran(0, json.dumps({"spec": {"replicas": 1, "template": {"spec": keyless(**change)}},
+                                "status": {"readyReplicas": 1}}))
+    ctx.kubectl = FakeKubectl(get_statefulset=answer)
+    got = pg_database.check(Need(), ctx)
+    assert got.state == "drift" and words in got.summary + " ".join(got.details), got
+
