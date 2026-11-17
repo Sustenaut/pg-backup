@@ -27,3 +27,7 @@ Feature: The pg-backup.json configuration
 
   Scenario: A schema reference is kept
     Then a schema reference is kept
+
+  Scenario: A namespace holding -restore- is refused, as only a drill's scratch one may
+    Given pg-backup.json's namespace is "auth-restore-x"
+    Then load says "holds -restore-, which only a drill's scratch namespace may"

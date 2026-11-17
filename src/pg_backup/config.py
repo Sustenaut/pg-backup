@@ -106,6 +106,12 @@ def load(path: Path = FILE) -> Config:
     except json.JSONDecodeError as error:
         raise ConfigError(f"{path} isn't JSON: {error}") from None
     problems = validate(data)
+    if not problems and "-restore-" in data["namespace"]:
+        # A drill's scratch namespace is <namespace>-restore-<time>, and Google's restore mapping
+        # (shared-infra's attribute.restore_of) reads the live namespace back as what comes
+        # before "-restore-": a live one holding it would read as another's.
+        problems = [f"pg-backup.json.namespace: {data['namespace']!r} holds -restore-, which only a "
+                    "drill's scratch namespace may"]
     if problems:
         raise ConfigError("\n".join([f"{path} doesn't match pg-backup's schema:", *problems]))
     data.pop("$schema", None)

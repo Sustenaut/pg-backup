@@ -1,0 +1,4 @@
+{
+  "category": "fixed",
+  "change": "pg-backup.json's namespace may not hold -restore-, which only a drill's scratch namespace does: Google's restore mapping reads the live namespace back as what comes before it, so a live one holding it would read as another's"
+}

@@ -1,11 +1,12 @@
 import json
+import re
 
 import pytest
 
 from pg_backup.config import ConfigError, _errors, load, schema, validate
 
 from conftest import EXAMPLE
-from pytest_bdd import scenarios, then
+from pytest_bdd import given, parsers, scenarios, then
 
 scenarios("config.feature")
 
@@ -95,3 +96,17 @@ def a_schema_reference_is_kept(tmp_path, monkeypatch):
     (tmp_path / "backups").mkdir()
     (tmp_path / "backups" / "pg-backup.json").write_text(json.dumps(data))
     assert load().namespace == "auth"
+
+
+@given(parsers.parse('pg-backup.json\'s namespace is "{namespace}"'), target_fixture="repository")
+def namespace_is(tmp_path, monkeypatch, namespace):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "backups").mkdir()
+    (tmp_path / "backups" / "pg-backup.json").write_text(json.dumps(example() | {"namespace": namespace}))
+    return tmp_path
+
+
+@then(parsers.parse('load says "{words}"'))
+def load_says(repository, words):
+    with pytest.raises(ConfigError, match=re.escape(words)):
+        load()
