@@ -1,5 +1,5 @@
-# Written by `pubkit sync` from security.dependabot in pubkit.json. Do not edit:
-# change pubkit.json and run `pubkit sync`.
+# Written by `pubrules sync` from security.dependabot in pubrules.json. Do not edit:
+# change pubrules.json and run `pubrules sync`.
 version: 2
 updates:
-  - {"package-ecosystem": "github-actions", "directory": "/", "schedule": {"interval": "weekly"}, "ignore": [{"dependency-name": "Sustenaut/pubkit/*"}, {"dependency-name": "Sustenaut/pubrel/*"}], "open-pull-requests-limit": 0}
+  - {"package-ecosystem": "github-actions", "directory": "/", "schedule": {"interval": "weekly"}, "ignore": [{"dependency-name": "Sustenaut/pubrules/*"}, {"dependency-name": "Sustenaut/pubrel/*"}], "open-pull-requests-limit": 0}

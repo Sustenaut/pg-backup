@@ -1,0 +1,11 @@
+# Managed by pubrules 0.43.0: `pubrules sync` rewrites this file, and
+# `pubrules sync --check` fails when it differs. Add your own requirements to
+# requirements.txt, which includes this one; `pubrules lock` then pins the lot
+# with hashes in requirements.lock.
+pytest==9.0.3
+pytest-bdd==8.1.0
+pytest-xdist==3.8.0
+hypothesis==6.170.5
+# The steps and the pytest plugin every suite loads (pubtest's GRAMMAR.md).
+pubtest @ https://github.com/Sustenaut/pubtest/releases/download/v0.1.0/pubtest-0.1.0-py3-none-any.whl
+pubrules @ https://github.com/Sustenaut/pubrules/releases/download/v0.43.0/pubrules-0.43.0-py3-none-any.whl

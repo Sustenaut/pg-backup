@@ -1,5 +1,5 @@
 # The functional suite's direct dependencies. Exact pins only; the resolved
-# set with hashes lives in requirements.lock. Regenerate it with `pubkit lock`.
--r requirements-pubkit.txt
+# set with hashes lives in requirements.lock. Regenerate it with `pubrules lock`.
+-r requirements-pubrules.txt
 # Measures the suite for SonarQube Cloud.
 coverage==7.11.0

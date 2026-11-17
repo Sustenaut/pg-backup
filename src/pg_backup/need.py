@@ -1,11 +1,11 @@
-"""pg.database: a need type for pubkit's deploy walk, offered under the entry point group
+"""pg.database: a need type for pubrules's deploy walk, offered under the entry point group
 `sustenaut.needs`. It checks that a database pg-backup looks after is sound (its settings, its
 StatefulSet and how it reaches the bucket with no key, the wal-g sidecar's last status lines,
 and the WAL Secret), and fulfils it by making the archive's encryption key, as setup-secrets
 does, through the walk's Bitwarden writer and kubectl.
 
-It has what pubkit's NeedType has by duck typing and imports nothing from pubkit, so pg-backup
-needs no pubkit to install. Every failure is a Result, never an exception. No value of a key
+It has what pubrules's NeedType has by duck typing and imports nothing from pubrules, so pg-backup
+needs no pubrules to install. Every failure is a Result, never an exception. No value of a key
 reaches a Result, a log or a command line: the WAL Secret goes to kubectl on its input."""
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from .restore import Stop
 from .setup import KEY_NAMES, Keys, make_keys, secret_manifest
 
 STATES = ("ready", "missing", "drift", "blocked", "unknown")
-SUMMARY = 120  # pubkit's longest summary, in characters
+SUMMARY = 120  # pubrules's longest summary, in characters
 WORST = ("missing", "drift", "blocked", "unknown", "ready")  # what a need's state is, of its parts'
 ARCHIVE_LAG = timedelta(minutes=10)
 BASE_BACKUP_AGE = timedelta(hours=26)
@@ -39,7 +39,7 @@ NO_WRITER = "needs a Bitwarden write token: run the walk at a terminal"
 
 @dataclass
 class Result:
-    """pubkit's Result, field for field, for a walk whose Context comes from a module without one."""
+    """pubrules's Result, field for field, for a walk whose Context comes from a module without one."""
     state: str
     summary: str
     fix: str = ""
@@ -53,9 +53,9 @@ class Result:
 
 
 def result(ctx: Any, state: str, summary: str, fix: str = "", details: list[str] | None = None) -> Any:
-    """A Result of the class the walk expects. pubkit 0.31.1's walk keeps a check's answer only if
+    """A Result of the class the walk expects. pubrules 0.31.1's walk keeps a check's answer only if
     it is an instance of its own Result, which sits in the module its Context comes from: that
-    class, found there without importing pubkit, or this module's own."""
+    class, found there without importing pubrules, or this module's own."""
     kind = getattr(sys.modules.get(type(ctx).__module__), "Result", None)
     if not isinstance(kind, type) or kind.__name__ != "Result":
         kind = Result
@@ -109,7 +109,7 @@ class _Ran:
 
 
 def takes_input(run: Callable) -> bool:
-    """Whether ctx.kubectl takes the input= pubkit's phase 2 gives it."""
+    """Whether ctx.kubectl takes the input= pubrules's phase 2 gives it."""
     try:
         parameters = inspect.signature(run).parameters
     except (TypeError, ValueError):
@@ -300,8 +300,8 @@ class PgDatabase:
         if writer is None or values is None:
             return result(ctx, "unknown", "the keys can't be made in this walk", fix=NO_WRITER)
         if not takes_input(ctx.kubectl):
-            return result(ctx, "unknown", "this pubkit's kubectl takes no input, so the WAL Secret can't be put",
-                          fix="use a pubkit whose walk fulfils (phase 2), or ./backups/pg-backup setup-secrets")
+            return result(ctx, "unknown", "this pubrules's kubectl takes no input, so the WAL Secret can't be put",
+                          fix="use a pubrules whose walk fulfils (phase 2), or ./backups/pg-backup setup-secrets")
         config, bad = self.settings(need, ctx)
         if bad:
             return result(ctx, *bad)

@@ -1,5 +1,5 @@
-# Written by `pubkit sync` from the ci block of pubkit.json. Do not edit:
-# change pubkit.json and run `pubkit sync`.
+# Written by `pubrules sync` from the ci block of pubrules.json. Do not edit:
+# change pubrules.json and run `pubrules sync`.
 name: pr
 
 on:
@@ -14,7 +14,7 @@ jobs:
   # jobs it ran are skipped, and nothing here tests less than it did.
   tested:
     name: ci
-    uses: Sustenaut/pubkit/.github/workflows/job-tested.yml@c502c3d3969ac75ec9a411c284e49f01c5a93558 # v0.37.0
+    uses: Sustenaut/pubrules/.github/workflows/job-tested.yml@2fe559caa00c029d9be864faa7f7cc20cd234d0e # v0.43.0
     with: {"workflow": ".github/workflows/pr.yml"}
     permissions:
       actions: read
@@ -24,31 +24,31 @@ jobs:
     name: ci
     needs: [tested]
     if: ${{ needs.tested.outputs.tested != 'true' }}
-    uses: Sustenaut/pubkit/.github/workflows/job-python-functional.yml@c502c3d3969ac75ec9a411c284e49f01c5a93558 # v0.37.0
+    uses: Sustenaut/pubrules/.github/workflows/job-python-functional.yml@2fe559caa00c029d9be864faa7f7cc20cd234d0e # v0.43.0
 
   audit:
     name: ci
     needs: [tested]
     if: ${{ needs.tested.outputs.tested != 'true' }}
-    uses: Sustenaut/pubkit/.github/workflows/job-python-audit.yml@c502c3d3969ac75ec9a411c284e49f01c5a93558 # v0.37.0
+    uses: Sustenaut/pubrules/.github/workflows/job-python-audit.yml@2fe559caa00c029d9be864faa7f7cc20cd234d0e # v0.43.0
 
   osv:
     name: ci
     needs: [tested]
     if: ${{ needs.tested.outputs.tested != 'true' }}
-    uses: Sustenaut/pubkit/.github/workflows/job-osv.yml@c502c3d3969ac75ec9a411c284e49f01c5a93558 # v0.37.0
+    uses: Sustenaut/pubrules/.github/workflows/job-osv.yml@2fe559caa00c029d9be864faa7f7cc20cd234d0e # v0.43.0
 
   review:
     name: ci
     needs: [tested]
     if: ${{ needs.tested.outputs.tested != 'true' }}
-    uses: Sustenaut/pubkit/.github/workflows/job-review.yml@c502c3d3969ac75ec9a411c284e49f01c5a93558 # v0.37.0
+    uses: Sustenaut/pubrules/.github/workflows/job-review.yml@2fe559caa00c029d9be864faa7f7cc20cd234d0e # v0.43.0
 
   sonar:
     name: ci
     needs: [tested, functional]
     if: ${{ github.event_name != 'merge_group' && needs.tested.outputs.tested != 'true' }}
-    uses: Sustenaut/pubkit/.github/workflows/job-sonar.yml@c502c3d3969ac75ec9a411c284e49f01c5a93558 # v0.37.0
+    uses: Sustenaut/pubrules/.github/workflows/job-sonar.yml@2fe559caa00c029d9be864faa7f7cc20cd234d0e # v0.43.0
     with: {"reports": "sonar.python.coverage.reportPaths=*.xml", "layout": "-Dsonar.sources=src -Dsonar.tests=tests"}
     secrets: { SONAR_TOKEN: '${{ secrets.SONAR_TOKEN }}' }
 
@@ -75,8 +75,8 @@ jobs:
   release:
     needs: passed
     if: ${{ !cancelled() && needs.passed.result == 'success' }}
-    uses: Sustenaut/pubrel/.github/workflows/release.yml@5395ddd816d9530b649b92ed0b8b3cfdfe87d7dc # v0.6.1
-    with: {"pubrel-version": "v0.6.1"}
+    uses: Sustenaut/pubrel/.github/workflows/release.yml@931f3016d6fec63315e413060cde079d77730b52 # v0.7.0
+    with: {"pubrel-version": "v0.7.0"}
     secrets: { RELEASE_APP_ID: '${{ secrets.RELEASE_APP_ID }}', RELEASE_APP_KEY: '${{ secrets.RELEASE_APP_KEY }}' }
     permissions:
       contents: write

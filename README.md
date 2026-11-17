@@ -97,7 +97,7 @@ with the zone named; the restore target PostgreSQL gets, and WAL-G's own times, 
 ## In pubdeploy's walk: the `pg.database` need
 
 pg-backup offers a need type to pubdeploy's walk, under the entry point group
-`sustenaut.needs`, so a repository's `pubkit.json` can say its deploy needs a database pg-backup
+`sustenaut.needs`, so a repository's `pubrules.json` can say its deploy needs a database pg-backup
 looks after:
 
 ```json
@@ -111,7 +111,7 @@ looks after:
 | `container` | `wal-g` | The sidecar running `walg-loop`, whose log has the archive's status line |
 
 `./pubdeploy types` lists it once pg-backup's wheel is in the repository's deploy.providers.
-pg-backup imports nothing from pubkit or pubdeploy: it has what their need types have by their
+pg-backup imports nothing from pubrules or pubdeploy: it has what their need types have by their
 names.
 
 **The check** (6 s, read-only) is the worst of:

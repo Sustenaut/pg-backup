@@ -1,0 +1,4 @@
+{
+  "category": "internal",
+  "change": "pubkit is now pubrules: the repository runs on pubrules 0.43.0 (pubrules.json, ./pubrules, the managed workflows and test pins)"
+}
