@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Managed by pubkit 0.37.0: `pubkit sync` rewrites this file, and
-# `pubkit sync --check` fails when it differs.
+# Managed by pubrules 0.43.0: `pubrules sync` rewrites this file, and
+# `pubrules sync --check` fails when it differs.
 #
 # Install a hash-locked requirements file with pip, and ride out release
 # downloads that fail: pip retries no 504.
@@ -9,7 +9,7 @@
 #   tests/install-lock .venv/bin/pip other.lock
 #   tests/install-lock --rewrite tests/requirements.lock > mirrored.lock
 #
-# The install is tried three times, 15 s apart. When pubkit.json names a
+# The install is tried three times, 15 s apart. When pubrules.json names a
 # wheel mirror (mirror.wheels), a fourth try takes each wheel the lock pins
 # by a GitHub release URL from the mirror instead, at the address its
 # sha256 gives: <mirror>/f/<sha256>/<file>.whl. The hashes stay as they

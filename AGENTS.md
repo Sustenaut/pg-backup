@@ -1,10 +1,10 @@
 # Working in this repository
 
-Managed by pubkit 0.37.0: `pubkit sync` rewrites this file and `pubkit
+Managed by pubrules 0.43.0: `pubrules sync` rewrites this file and `pubrules
 sync --check` fails when it differs, so every pub* repository gives agents
 and people the same rules. Repository-specific guidance lives in the
-README. The standard behind these rules is pubkit's README:
-<https://github.com/Sustenaut/pubkit#readme>.
+README. The standard behind these rules is pubrules's README:
+<https://github.com/Sustenaut/pubrules#readme>.
 
 ## Pull requests: ready, or draft
 

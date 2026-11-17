@@ -1,5 +1,5 @@
-# Managed by pubkit 0.37.0: `pubkit sync` rewrites this file, and
-# `pubkit sync --check` fails when it differs. Include it from the Makefile,
+# Managed by pubrules 0.43.0: `pubrules sync` rewrites this file, and
+# `pubrules sync --check` fails when it differs. Include it from the Makefile,
 # and set the variables below there, before the include; targets of your own
 # go there too. It is the same in every Python package, so a rule set here
 # (the suite on every core, its coverage in coverage/coverage.xml) holds in each.
@@ -9,7 +9,7 @@ SHELL := /bin/bash
 export PATH := $(CURDIR)/.venv/bin:$(PATH)
 
 # Arguments to pytest: the suite runs on every core (pytest-xdist, which
-# tests/requirements-pubkit.txt pins); PYTEST_ARGS = runs it on one.
+# tests/requirements-pubrules.txt pins); PYTEST_ARGS = runs it on one.
 PYTEST_ARGS ?= -n auto
 # Variables the suite needs, as NAME=value words, such as
 # PYTHONPATH=$(CURDIR)/src for a package that is not installed.
@@ -35,10 +35,10 @@ functional: ## The Gherkin suite on every core, with its coverage in coverage/co
 	COVERAGE_FILE=coverage/.coverage .venv/bin/coverage xml -q
 
 lock: ## Pin tests/requirements.txt, with hashes, in tests/requirements.lock
-	./pubkit lock
+	./pubrules lock
 
-sync-check: ## Fail if pubkit's managed files differ from the pinned version's
-	./pubkit sync --check
+sync-check: ## Fail if pubrules's managed files differ from the pinned version's
+	./pubrules sync --check
 
 wheel: ## Build the wheel a release carries
 	.venv/bin/pip wheel --quiet --no-deps . -w dist

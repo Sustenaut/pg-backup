@@ -76,7 +76,7 @@ class FakeKubectl:
 
 
 class OldKubectl(FakeKubectl):
-    """pubkit 0.31.1's: args alone."""
+    """pubrules 0.31.1's: args alone."""
 
     def __call__(self, args):
         return super().__call__(args)
@@ -235,8 +235,8 @@ def test_a_fault_in_the_check_is_a_result(ctx):
 
 
 def test_the_result_is_the_walks_own_class(tmp_path, monkeypatch):
-    """pubkit's walk keeps only its own Result: the one in its Context's module."""
-    fake = types.ModuleType("fake_pubkit_model")
+    """pubrules's walk keeps only its own Result: the one in its Context's module."""
+    fake = types.ModuleType("fake_pubrules_model")
 
     @dataclass
     class TheirResult:
@@ -251,14 +251,14 @@ def test_the_result_is_the_walks_own_class(tmp_path, monkeypatch):
 
     class TheirContext(Context):
         pass
-    TheirContext.__module__ = "fake_pubkit_model"
-    monkeypatch.setitem(sys.modules, "fake_pubkit_model", fake)
+    TheirContext.__module__ = "fake_pubrules_model"
+    monkeypatch.setitem(sys.modules, "fake_pubrules_model", fake)
     got = pg_database.check(Need(), TheirContext(tmp_path))
     assert type(got) is TheirResult and got.state == "drift"
     assert type(pg_database.check(Need(), Context(tmp_path))) is Result
 
 
-def test_a_long_summary_is_cut_as_pubkit_cuts_it():
+def test_a_long_summary_is_cut_as_pubrules_cuts_it():
     assert len(Result("ready", "x" * 300).summary) == 120
 
 
