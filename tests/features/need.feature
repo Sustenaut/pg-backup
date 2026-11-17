@@ -1,8 +1,8 @@
 Feature: The pg.database need type
   Against a fake Context: a fake kubectl that keeps each argv and input, a fixed clock, and a fake Bitwarden writer.
 
-  Scenario: The type has what pubkit checks
-    Then the type has what pubkit checks
+  Scenario: The type has what pubdeploy checks
+    Then the type has what pubdeploy checks
 
   Scenario: A healthy database is ready with the drill in details
     Then a healthy database is ready with the drill in details
