@@ -119,8 +119,8 @@ def ctx(tmp_path):
     return Context(tmp_path)
 
 
-@then("the type has what pubkit checks")
-def the_type_has_what_pubkit_checks():
+@then("the type has what pubdeploy checks")
+def the_type_has_what_pubdeploy_checks():
     kind = pg_database
     assert kind.type == "pg.database" and kind.grade == "auto" and kind.offline is False
     assert kind.budget == 6 and kind.fulfil_budget == 300

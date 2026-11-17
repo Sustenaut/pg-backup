@@ -1,0 +1,4 @@
+{
+  "category": "internal",
+  "change": "The need type's first scenario says what it holds is what pubdeploy checks, not pubkit"
+}
