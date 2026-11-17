@@ -8,6 +8,9 @@ from pg_backup.restore import Stop, choose_backup, clean, oldest_backup, parse_t
 from pg_backup.server import ServerError
 
 from conftest import BACKUPS, ROWS
+from pytest_bdd import scenarios, then
+
+scenarios("restore.feature")
 
 
 def lines():
@@ -15,7 +18,8 @@ def lines():
     return out, out.append
 
 
-def test_targets_need_a_zone():
+@then("targets need a zone")
+def targets_need_a_zone():
     assert parse_target("latest") is None
     assert parse_target("2026-11-05 14:32:00+00") == datetime(2026, 11, 5, 14, 32, tzinfo=timezone.utc)
     assert parse_target("2026-11-05T16:32:00+02:00") == datetime(2026, 11, 5, 14, 32, tzinfo=timezone.utc)
@@ -27,7 +31,8 @@ def test_targets_need_a_zone():
         parse_target("yesterday")
 
 
-def test_the_newest_backup_before_the_moment_is_chosen():
+@then("the newest backup before the moment is chosen")
+def the_newest_backup_before_the_moment_is_chosen():
     backups = json.loads(BACKUPS)
     assert choose_backup(backups, None) == "base_2"
     assert choose_backup(backups, parse_target("2026-11-06 07:00:00+00")) == "base_1"
@@ -36,7 +41,8 @@ def test_the_newest_backup_before_the_moment_is_chosen():
     assert oldest_backup([]) is None
 
 
-def test_a_restore_goes_into_a_closed_scratch_namespace(config, server):
+@then("a restore goes into a closed scratch namespace")
+def a_restore_goes_into_a_closed_scratch_namespace(config, server):
     out, say = lines()
     namespace = restore(config, server, "2026-11-06 07:05:00+00", say=say, sleep=lambda s: None)
     assert config.is_scratch(namespace)
@@ -71,12 +77,14 @@ def test_a_restore_goes_into_a_closed_scratch_namespace(config, server):
     assert out[-1].startswith(f"Then: ./backups/pg-backup clean {namespace}")
 
 
-def test_latest_sets_no_target(config, server):
+@then("latest sets no target")
+def latest_sets_no_target(config, server):
     restore(config, server, "latest", say=lambda s: None, sleep=lambda s: None)
     assert not server.ran("recovery_target_time =")
 
 
-def test_too_early_is_exit_3_with_the_oldest(config, server):
+@then("too early is exit 3 with the oldest")
+def too_early_is_exit_3_with_the_oldest(config, server):
     with pytest.raises(Stop) as stop:
         restore(config, server, "2026-11-06 06:00:00+00", say=lambda s: None)
     assert stop.value.code == 3
@@ -84,21 +92,24 @@ def test_too_early_is_exit_3_with_the_oldest(config, server):
     assert config.is_scratch(stop.value.namespace)
 
 
-def test_an_empty_archive_is_too_early_too(config, server):
+@then("an empty archive is too early too")
+def an_empty_archive_is_too_early_too(config, server):
     server.on(r"backup-list --json", "")
     with pytest.raises(Stop, match="not there yet") as stop:
         restore(config, server, "latest", say=lambda s: None)
     assert stop.value.oldest is None
 
 
-def test_a_failure_before_the_namespace_names_none(config, server):
+@then("a failure before the namespace names none")
+def a_failure_before_the_namespace_names_none(config, server):
     server.on(r"get statefulset postgres", "")
     with pytest.raises(Stop, match="no container postgres") as stop:
         restore(config, server, "latest", say=lambda s: None)
     assert stop.value.namespace is None
 
 
-def test_an_image_without_wal_g_stops(config, server):
+@then("an image without wal-g stops")
+def an_image_without_wal_g_stops(config, server):
     server.on(r"command -v wal-g", "")
     with pytest.raises(Stop, match="Has the deploy that moves it finished") as stop:
         restore(config, server, "latest", say=lambda s: None)
@@ -106,20 +117,23 @@ def test_an_image_without_wal_g_stops(config, server):
     assert stop.value.old_image == "ghcr.io/sustenaut/pg-backup:0.1.0-pg16"
 
 
-def test_a_restore_missing_a_required_row_fails(config, server):
+@then("a restore missing a required row fails")
+def a_restore_missing_a_required_row_fails(config, server):
     server.on(r"exec restore -- psql .*group by", "family 4\nmaster 2\n")
     with pytest.raises(Stop, match="no sustenaut, team"):
         restore(config, server, "latest", say=lambda s: None, sleep=lambda s: None)
 
 
-def test_recovery_that_never_ends_times_out(config, server):
+@then("recovery that never ends times out")
+def recovery_that_never_ends_times_out(config, server):
     server.on(r"pg_is_in_recovery", ServerError("not up"))
     ticks = iter(range(0, 10000, 100))
     with pytest.raises(Stop, match="30 minutes"):
         restore(config, server, "latest", say=lambda s: None, clock=lambda: next(ticks), sleep=lambda s: None)
 
 
-def test_clean_deletes_only_scratch_namespaces(config, server):
+@then("clean deletes only scratch namespaces")
+def clean_deletes_only_scratch_namespaces(config, server):
     clean(config, server, "auth-restore-20261106070216")
     assert server.ran("delete namespace auth-restore-20261106070216 --wait=false")
     with pytest.raises(Stop) as stop:
@@ -136,7 +150,8 @@ def run_promote(config, server, answer=None, interactive=True):
     return out
 
 
-def test_promote_refuses_a_live_namespace(config, server):
+@then("promote refuses a live namespace")
+def promote_refuses_a_live_namespace(config, server):
     with pytest.raises(Stop) as stop:
         run_promote(config, server, NS.replace("-restore-20261106070216", ""))
     with pytest.raises(Stop) as stop:
@@ -144,19 +159,22 @@ def test_promote_refuses_a_live_namespace(config, server):
     assert stop.value.code == 2
 
 
-def test_promote_needs_a_running_restore(config, server):
+@then("promote needs a running restore")
+def promote_needs_a_running_restore(config, server):
     server.on(r"pg_is_in_recovery", ServerError("gone"))
     with pytest.raises(Stop, match="no promoted restore"):
         run_promote(config, server)
 
 
-def test_promote_needs_every_required_row(config, server):
+@then("promote needs every required row")
+def promote_needs_every_required_row(config, server):
     server.on(r"exec restore -- psql .*group by", "family 4\n")
     with pytest.raises(Stop, match="not promoting it"):
         run_promote(config, server)
 
 
-def test_promote_needs_a_terminal_and_the_exact_words(config, server):
+@then("promote needs a terminal and the exact words")
+def promote_needs_a_terminal_and_the_exact_words(config, server):
     with pytest.raises(Stop, match="at a terminal") as stop:
         run_promote(config, server, interactive=False)
     assert stop.value.code == 2
@@ -165,7 +183,8 @@ def test_promote_needs_a_terminal_and_the_exact_words(config, server):
     assert not server.ran(r"create job|scale")
 
 
-def test_promote_dumps_first_and_stops_without_the_dump(config, server):
+@then("promote dumps first and stops without the dump")
+def promote_dumps_first_and_stops_without_the_dump(config, server):
     server.on(r"wait --for=condition=complete", ServerError("timed out"))
     with pytest.raises(Stop, match="didn't complete"):
         run_promote(config, server)
@@ -173,7 +192,8 @@ def test_promote_dumps_first_and_stops_without_the_dump(config, server):
     assert not server.ran("scale")
 
 
-def test_promote_replaces_live_in_one_transaction_and_starts_the_app(config, server):
+@then("promote replaces live in one transaction and starts the app")
+def promote_replaces_live_in_one_transaction_and_starts_the_app(config, server):
     out = run_promote(config, server)
     order = [c for c in server.calls if re.search(r"create job|scale|pg_dump|pg_restore", c)]
     assert "create job" in order[0]
@@ -185,14 +205,16 @@ def test_promote_replaces_live_in_one_transaction_and_starts_the_app(config, ser
     assert out[-1] == f"When it looks right: ./backups/pg-backup clean {NS}"
 
 
-def test_a_failed_pg_restore_leaves_live_and_starts_the_app(config, server):
+@then("a failed pg_restore leaves live and starts the app")
+def a_failed_pg_restore_leaves_live_and_starts_the_app(config, server):
     server.on(r"pg_restore", ServerError("bad", "pg_restore: error"))
     with pytest.raises(Stop, match="rolled back"):
         run_promote(config, server)
     assert server.calls[-2].endswith("--replicas=1")
 
 
-def test_live_not_matching_after_promote_fails_and_starts_the_app(config, server):
+@then("live not matching after promote fails and starts the app")
+def live_not_matching_after_promote_fails_and_starts_the_app(config, server):
     seen = {"n": 0}
 
     def live(command):
@@ -206,7 +228,8 @@ def test_live_not_matching_after_promote_fails_and_starts_the_app(config, server
 
 
 
-def test_an_idle_database_gets_a_segment_closed_so_the_archive_covers_the_moment(config, server):
+@then("an idle database gets a segment closed so the archive covers the moment")
+def an_idle_database_gets_a_segment_closed_so_the_archive_covers_the_moment(config, server):
     archived = iter(["000000010000000000000003", "000000010000000000000004"])
     server.on(r"extract\(epoch from last_archived_time\)", "1762412000\n")  # before the moment
     server.on(r"pg_switch_wal", "0/4000000\n000000010000000000000004\n")
@@ -217,7 +240,8 @@ def test_an_idle_database_gets_a_segment_closed_so_the_archive_covers_the_moment
     assert server.ran(r"-n auth exec postgres-0 -c postgres -- psql .*pg_logical_emit_message\(true")
 
 
-def test_a_segment_live_never_archives_stops(config, server):
+@then("a segment live never archives stops")
+def a_segment_live_never_archives_stops(config, server):
     server.on(r"extract\(epoch from last_archived_time\)", "0\n")
     server.on(r"pg_switch_wal", "000000010000000000000004\n")
     server.on(r"select coalesce\(last_archived_wal", "000000010000000000000003")
@@ -226,13 +250,15 @@ def test_a_segment_live_never_archives_stops(config, server):
         restore(config, server, "2026-11-06 07:05:00+00", say=lambda s: None, clock=lambda: next(ticks), sleep=lambda s: None)
 
 
-def test_latest_needs_no_segment_closed(config, server):
+@then("latest needs no segment closed")
+def latest_needs_no_segment_closed(config, server):
     server.on(r"extract\(epoch from last_archived_time\)", "0\n")
     restore(config, server, "latest", say=lambda s: None, sleep=lambda s: None)
     assert not server.ran("pg_switch_wal")
 
 
-def test_a_restore_whose_postgresql_stopped_fails_at_once_with_its_log(config, server):
+@then("a restore whose PostgreSQL stopped fails at once with its log")
+def a_restore_whose_postgresql_stopped_fails_at_once_with_its_log(config, server):
     server.on(r"pg_is_in_recovery", ServerError("no server"))
     server.on(r"status >/dev/null && echo up", "")
     server.on(r"tail -n 8 /restore/postgres.log", "FATAL:  recovery ended before configured recovery target was reached\n")
@@ -240,7 +266,8 @@ def test_a_restore_whose_postgresql_stopped_fails_at_once_with_its_log(config, s
         restore(config, server, "latest", say=lambda s: None, sleep=lambda s: None)
 
 
-def test_a_live_credential_that_impersonates_nothing_stops_the_restore(config, server):
+@then("a live credential that impersonates nothing stops the restore")
+def a_live_credential_that_impersonates_nothing_stops_the_restore(config, server):
     server.on(r"get configmap wal-google-credential -o json", json.dumps({"data": {"credential.json": "{}"}}))
     with pytest.raises(Stop, match="holds no external_account credential that impersonates"):
         restore(config, server, "latest", say=lambda s: None)
