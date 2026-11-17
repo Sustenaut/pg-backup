@@ -16,6 +16,9 @@ from pg_backup.need import PgDatabase, Result, archive_state, pg_database
 from pg_backup.setup import Keys, make_keys
 
 from conftest import EXAMPLE
+from pytest_bdd import parsers, scenarios, then
+
+scenarios("need.feature")
 
 NOW = datetime(2026, 11, 8, 6, 0, tzinfo=timezone.utc)
 CANARY = "CANARY-6f1c3a-not-for-any-log"
@@ -116,7 +119,8 @@ def ctx(tmp_path):
     return Context(tmp_path)
 
 
-def test_the_type_has_what_pubkit_checks():
+@then("the type has what pubkit checks")
+def the_type_has_what_pubkit_checks():
     kind = pg_database
     assert kind.type == "pg.database" and kind.grade == "auto" and kind.offline is False
     assert kind.budget == 6 and kind.fulfil_budget == 300
@@ -127,7 +131,8 @@ def test_the_type_has_what_pubkit_checks():
     assert module.STATES == ("ready", "missing", "drift", "blocked", "unknown")
 
 
-def test_a_healthy_database_is_ready_with_the_drill_in_details(ctx):
+@then("a healthy database is ready with the drill in details")
+def a_healthy_database_is_ready_with_the_drill_in_details(ctx):
     got = pg_database.check(Need(), ctx)
     assert got.state == "ready", got
     assert got.summary == "postgres in auth is ready, archiving; last base backup 2026-11-08 02:47 UTC, with no bucket key"
@@ -136,7 +141,8 @@ def test_a_healthy_database_is_ready_with_the_drill_in_details(ctx):
     assert ["-n", "auth", "logs", "postgres-0", "-c", "wal-g", "--tail=50"] in ctx.kubectl.argv
 
 
-def test_bad_settings_are_drift_with_their_first_line(ctx):
+@then("bad settings are drift with their first line")
+def bad_settings_are_drift_with_their_first_line(ctx):
     (ctx.root / "backups" / "pg-backup.json").write_text("{}")
     got = pg_database.check(Need(), ctx)
     assert got.state == "drift" and got.summary.startswith("backups/pg-backup.json doesn't match")
@@ -145,29 +151,38 @@ def test_bad_settings_are_drift_with_their_first_line(ctx):
     assert got.state == "drift" and "no backups/none.json" in got.summary
 
 
-def test_settings_for_another_namespace_or_statefulset_are_drift(ctx):
+@then("settings for another namespace or statefulset are drift")
+def settings_for_another_namespace_or_statefulset_are_drift(ctx):
     ctx.namespace = "other"
     assert "says namespace auth, the deploy other" in pg_database.check(Need(), ctx).summary
     ctx.namespace = "auth"
     assert "says statefulset postgres, the need db" in pg_database.check(Need(params={"statefulset": "db"}), ctx).summary
 
 
-@pytest.mark.parametrize("answer, state, words", [
+@then("the statefulset")
+def the_statefulset(ctx):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [
     (Ran(1, "", 'Error from server (NotFound): statefulsets.apps "postgres" not found'), "missing", "is not in auth"),
     (Ran(0, json.dumps({"spec": {"replicas": 1}, "status": {}})), "missing", "not ready: 0 of 1"),
     (Ran(1, "", "Error from server (Forbidden): statefulsets.apps is forbidden"), "unknown", "may not read statefulsets"),
     (Ran(127, "", "kubectl: not given to this check"), "unknown", "kubectl did not run"),
     (Ran(1, "", "connection refused"), "unknown", "could not read statefulsets"),
     (Ran(0, "not json"), "unknown", "is not JSON"),
-])
-def test_the_statefulset(ctx, answer, state, words):
+]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_the_statefulset(answer=case0[0], state=case0[1], words=case0[2], ctx=ctx)
+
+
+def _case_the_statefulset(ctx, answer, state, words):
     ctx.kubectl = FakeKubectl(get_statefulset=answer)
     got = pg_database.check(Need(), ctx)
     assert got.state == state and words in got.summary
     assert not any(a[2] == "logs" for a in ctx.kubectl.argv)  # no pod to read
 
 
-def test_kubectl_that_raises_is_unknown(ctx):
+@then("kubectl that raises is unknown")
+def kubectl_that_raises_is_unknown(ctx):
     def broken(args):
         raise OSError("no such file")
     ctx.kubectl = broken
@@ -175,7 +190,10 @@ def test_kubectl_that_raises_is_unknown(ctx):
     assert got.state == "unknown" and "kubectl did not run" in got.summary
 
 
-@pytest.mark.parametrize("lines, state, words", [
+@then("the sidecars status")
+def the_sidecars_status(ctx):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [
     ([fact(failed_count=2), fact(failed_count=3)], "drift", "archiving fails"),
     ([fact(pg_wal_bytes=1, last_archived_time="2026-11-08T05:40:00+00:00"),
       fact(pg_wal_bytes=2, last_archived_time="2026-11-08T05:40:00+00:00")], "drift", "archive lag"),
@@ -184,19 +202,25 @@ def test_kubectl_that_raises_is_unknown(ctx):
     ([fact(last_backup=None)], "drift", "no base backup yet"),
     (['{"fact": "wal_archive", "ok": false}'], "drift", "could not ask PostgreSQL"),
     (["PostgreSQL is starting", "{not json", '{"fact": "wal_base_backup", "ok": false}'], "unknown", "prints no status"),
-])
-def test_the_sidecars_status(ctx, lines, state, words):
+]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_the_sidecars_status(lines=case0[0], state=case0[1], words=case0[2], ctx=ctx)
+
+
+def _case_the_sidecars_status(ctx, lines, state, words):
     ctx.kubectl = FakeKubectl(logs=Ran(0, "\n".join(lines)))
     got = pg_database.check(Need(), ctx)
     assert got.state == state and words in got.summary, got
 
 
-def test_an_old_archive_time_is_fine_while_nothing_is_written():
+@then("an old archive time is fine while nothing is written")
+def an_old_archive_time_is_fine_while_nothing_is_written():
     quiet = [json.loads(fact(last_archived_time="2026-11-08T01:00:00+00:00"))] * 2
     assert archive_state(quiet, NOW)[0] == "ready"
 
 
-def test_logs_kubectl_may_not_read_is_unknown(ctx):
+@then("logs kubectl may not read is unknown")
+def logs_kubectl_may_not_read_is_unknown(ctx):
     spec = keyless()
     spec["containers"][1] = spec["containers"][1] | {"name": "sidecar"}
     ctx.kubectl = FakeKubectl(logs=Ran(1, "", "pods \"postgres-0\" is forbidden: cannot get resource pods/log"),
@@ -206,35 +230,45 @@ def test_logs_kubectl_may_not_read_is_unknown(ctx):
     assert got.state == "unknown" and "pods/log of postgres-0's sidecar" in got.summary
 
 
-@pytest.mark.parametrize("answer, state, words", [
+@then("the wal secret")
+def the_wal_secret(ctx):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [
     (Ran(1, "", 'Error from server (NotFound): secrets "auth-wal" not found'), "missing", "WAL Secret auth-wal is not in auth"),
     (Ran(0, json.dumps({"data": {"gcs-key.json": "x"}})), "drift", "has no libsodium-key"),
     (Ran(0, json.dumps({"data": {"gcs-key.json": "x", "libsodium-key": "a2V5"}})), "drift",
      "also has gcs-key.json, which nothing reads now"),
     (Ran(1, "", "secrets is forbidden"), "unknown", "may not read secrets"),
     (Ran(0, "[]"), "unknown", "is not JSON"),
-])
-def test_the_wal_secret(ctx, answer, state, words):
+]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_the_wal_secret(answer=case0[0], state=case0[1], words=case0[2], ctx=ctx)
+
+
+def _case_the_wal_secret(ctx, answer, state, words):
     ctx.kubectl = FakeKubectl(get_secret=answer)
     got = pg_database.check(Need(), ctx)
     assert got.state == state and words in got.summary
     assert "x" not in " ".join(got.details).split()
 
 
-def test_the_worst_part_wins(ctx):
+@then("the worst part wins")
+def the_worst_part_wins(ctx):
     ctx.kubectl = FakeKubectl(get_secret=Ran(1, "", "forbidden"), logs=Ran(0, fact(last_backup=None)))
     got = pg_database.check(Need(), ctx)
     assert got.state == "drift" and got.summary == "no base backup yet"
     assert [d.split(":")[0] for d in got.details] == ["ready", "drift", "unknown", "drill"]
 
 
-def test_a_fault_in_the_check_is_a_result(ctx):
+@then("a fault in the check is a result")
+def a_fault_in_the_check_is_a_result(ctx):
     ctx.now = None  # calling it raises TypeError
     got = pg_database.check(Need(), ctx)
     assert got.state == "unknown" and got.summary == "the check failed (TypeError)"
 
 
-def test_the_result_is_the_walks_own_class(tmp_path, monkeypatch):
+@then("the result is the walks own class")
+def the_result_is_the_walks_own_class(tmp_path, monkeypatch):
     """pubrules's walk keeps only its own Result: the one in its Context's module."""
     fake = types.ModuleType("fake_pubrules_model")
 
@@ -258,7 +292,8 @@ def test_the_result_is_the_walks_own_class(tmp_path, monkeypatch):
     assert type(pg_database.check(Need(), Context(tmp_path))) is Result
 
 
-def test_a_long_summary_is_cut_as_pubrules_cuts_it():
+@then("a long summary is cut as pubrules cuts it")
+def a_long_summary_is_cut_as_pubrules_cuts_it():
     assert len(Result("ready", "x" * 300).summary) == 120
 
 
@@ -269,7 +304,8 @@ def walk(ctx):
     return ctx
 
 
-def test_fulfil_makes_the_encryption_key_and_puts_the_secret_on_stdin(walk):
+@then("fulfil makes the encryption key and puts the secret on stdin")
+def fulfil_makes_the_encryption_key_and_puts_the_secret_on_stdin(walk):
     got = pg_database.fulfil(Need(), walk)
     assert got.state == "ready", got
     assert got.summary == "made auth-wal-key; put Secret auth-wal in auth"
@@ -282,7 +318,8 @@ def test_fulfil_makes_the_encryption_key_and_puts_the_secret_on_stdin(walk):
     assert sent["data"] == {"libsodium-key": base64.b64encode(key.encode()).decode()}
 
 
-def test_fulfil_keeps_the_key_bitwarden_has_and_puts_the_secret_back_with_it_alone(walk):
+@then("fulfil keeps the key bitwarden has and puts the secret back with it alone")
+def fulfil_keeps_the_key_bitwarden_has_and_puts_the_secret_back_with_it_alone(walk):
     walk.values = {"auth-wal-key": "a2V5"}
     got = pg_database.fulfil(Need(), walk)
     assert got.state == "ready" and got.summary == "put Secret auth-wal in auth"
@@ -291,9 +328,16 @@ def test_fulfil_keeps_the_key_bitwarden_has_and_puts_the_secret_back_with_it_alo
     assert json.loads(walk.kubectl.inputs[0])["data"] == {"libsodium-key": base64.b64encode(b"a2V5").decode()}
 
 
-@pytest.mark.parametrize("replace, state", [(Ran(0, "secret/auth-wal replaced"), "ready"),
-                                            (Ran(1, "", "refused"), "unknown")])
-def test_a_secret_apply_leaves_a_bucket_key_in_is_replaced(walk, replace, state):
+@then("a secret apply leaves a bucket key in is replaced")
+def a_secret_apply_leaves_a_bucket_key_in_is_replaced(walk):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [(Ran(0, "secret/auth-wal replaced"), "ready"),
+                                            (Ran(1, "", "refused"), "unknown")]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_a_secret_apply_leaves_a_bucket_key_in_is_replaced(replace=case0[0], state=case0[1], walk=walk)
+
+
+def _case_a_secret_apply_leaves_a_bucket_key_in_is_replaced(walk, replace, state):
     """A Secret made by create secret, or edited, keeps a key apply never put: read back, replaced."""
     walk.values = {"auth-wal-key": "a2V5"}
     walk.kubectl = FakeKubectl(**{"go-template": Ran(0, "gcs-key.json libsodium-key ")}, replace=replace)
@@ -306,7 +350,8 @@ def test_a_secret_apply_leaves_a_bucket_key_in_is_replaced(walk, replace, state)
         assert "kubectl replace refused the WAL Secret auth-wal" in got.summary
 
 
-def test_fulfil_needs_a_writer_and_a_kubectl_that_takes_input(ctx):
+@then("fulfil needs a writer and a kubectl that takes input")
+def fulfil_needs_a_writer_and_a_kubectl_that_takes_input(ctx):
     got = pg_database.fulfil(Need(), ctx)
     assert got.state == "unknown" and got.fix == "needs a Bitwarden write token: run the walk at a terminal"
     ctx.bitwarden_writer, ctx.values, ctx.kubectl = Writer(), {}, OldKubectl()
@@ -315,23 +360,32 @@ def test_fulfil_needs_a_writer_and_a_kubectl_that_takes_input(ctx):
     assert ctx.kubectl.argv == []
 
 
-def test_fulfil_with_bad_settings_touches_nothing(walk):
+@then("fulfil with bad settings touches nothing")
+def fulfil_with_bad_settings_touches_nothing(walk):
     (walk.root / "backups" / "pg-backup.json").write_text("{}")
     assert pg_database.fulfil(Need(), walk).state == "drift"
     assert walk.kubectl.argv == []
 
 
-@pytest.mark.parametrize("writer, kubectl, words", [
+@then("fulfil failures are results")
+def fulfil_failures_are_results(walk):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [
     (Writer(fails=True), FakeKubectl(), "Bitwarden refused auth-wal-key (RuntimeError)"),
     (Writer(), FakeKubectl(apply=Ran(1, "", "the server refused")), "kubectl apply refused the WAL Secret auth-wal"),
-])
-def test_fulfil_failures_are_results(walk, writer, kubectl, words):
+]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_fulfil_failures_are_results(writer=case0[0], kubectl=case0[1], words=case0[2], walk=walk)
+
+
+def _case_fulfil_failures_are_results(walk, writer, kubectl, words):
     walk.bitwarden_writer, walk.kubectl = writer, kubectl
     got = pg_database.fulfil(Need(), walk)
     assert got.state == "unknown" and words in got.summary
 
 
-def test_a_fault_in_fulfil_is_a_result(walk):
+@then("a fault in fulfil is a result")
+def a_fault_in_fulfil_is_a_result(walk):
     walk.values = types.SimpleNamespace()  # no .get
     got = pg_database.fulfil(Need(), walk)
     assert got.state == "unknown" and got.summary == "fulfil failed (AttributeError)"
@@ -341,8 +395,8 @@ def every_field(got) -> str:
     return json.dumps([got.state, got.summary, got.fix, got.details, got.checked_at, got.seconds])
 
 
-@pytest.mark.parametrize("case", ["made", "known", "refused"])
-def test_the_canary_never_shows_and_reaches_kubectl_on_stdin(walk, capsys, case):
+@then(parsers.parse('the canary never shows and reaches kubectl on stdin when the key is {case}'))
+def the_canary_never_shows_and_reaches_kubectl_on_stdin(walk, capsys, case):
     """A key's value is in no Result field, no output, and no argv: kubectl gets it on its input."""
     if case == "known":
         walk.values = {"auth-wal-key": CANARY}
@@ -362,7 +416,8 @@ def test_the_canary_never_shows_and_reaches_kubectl_on_stdin(walk, capsys, case)
         assert base64.b64decode(json.loads(sent)["data"]["libsodium-key"]).decode() == CANARY
 
 
-def test_make_keys_says_what_setup_secrets_said():
+@then("make keys says what setup secrets said")
+def make_keys_says_what_setup_secrets_said():
     from pg_backup.config import load
     config = load(EXAMPLE)
     out, calls = [], []
@@ -374,13 +429,17 @@ def test_make_keys_says_what_setup_secrets_said():
     assert calls == [("encryption", "auth-wal-key"), ("put",)]
 
 
-def test_the_entry_point_names_the_instance():
+@then("the entry point names the instance")
+def the_entry_point_names_the_instance():
     text = (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text()
     assert 'pg-database = "pg_backup.need:pg_database"' in text
     assert isinstance(module.pg_database, PgDatabase)
 
 
-@pytest.mark.parametrize("change, words", [
+@then("a statefulset that would need a bucket key is drift")
+def a_statefulset_that_would_need_a_bucket_key_is_drift(ctx):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [
     ({"serviceAccountName": "default"}, "does not run as postgres"),
     ({"volumes": []}, "has no projected token or no ConfigMap wal-google-credential"),
     ({"containers": keyless()["containers"][:1]}, "has no container wal-g"),
@@ -388,8 +447,12 @@ def test_the_entry_point_names_the_instance():
                                                    "value": "/var/run/secrets/wal/gcs-key.json"}],
                       "volumeMounts": keyless()["containers"][0]["volumeMounts"]}, keyless()["containers"][1]]},
      "postgres in StatefulSet postgres does not reach the bucket through wal-google-credential"),
-])
-def test_a_statefulset_that_would_need_a_bucket_key_is_drift(ctx, change, words):
+]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_a_statefulset_that_would_need_a_bucket_key_is_drift(change=case0[0], words=case0[1], ctx=ctx)
+
+
+def _case_a_statefulset_that_would_need_a_bucket_key_is_drift(ctx, change, words):
     answer = Ran(0, json.dumps({"spec": {"replicas": 1, "template": {"spec": keyless(**change)}},
                                 "status": {"readyReplicas": 1}}))
     ctx.kubectl = FakeKubectl(get_statefulset=answer)

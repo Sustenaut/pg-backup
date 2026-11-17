@@ -5,17 +5,22 @@ import pytest
 from pg_backup.config import ConfigError, _errors, load, schema, validate
 
 from conftest import EXAMPLE
+from pytest_bdd import scenarios, then
+
+scenarios("config.feature")
 
 
 def example():
     return json.loads(EXAMPLE.read_text())
 
 
-def test_the_example_is_valid():
+@then("the example is valid")
+def the_example_is_valid():
     assert validate(example()) == []
 
 
-def test_a_typo_in_a_setting_name_is_caught():
+@then("a typo in a setting name is caught")
+def a_typo_in_a_setting_name_is_caught():
     data = example()
     data["namespce"] = data.pop("namespace")
     problems = validate(data)
@@ -23,7 +28,8 @@ def test_a_typo_in_a_setting_name_is_caught():
     assert "pg-backup.json: namespce isn't a setting (a typo?)" in problems
 
 
-def test_nested_settings_are_checked():
+@then("nested settings are checked")
+def nested_settings_are_checked():
     data = example()
     data["wal"]["bucket"] = "gs://sustenaut-auth-wal"
     data["check"]["required"] = []
@@ -34,7 +40,8 @@ def test_nested_settings_are_checked():
     assert "pg-backup.json.app: should be an object" in problems
 
 
-def test_strings_and_items_are_checked():
+@then("strings and items are checked")
+def strings_and_items_are_checked():
     data = example()
     data["check"]["query"] = ""
     data["check"]["required"] = ["ok", "no spaces"]
@@ -44,16 +51,19 @@ def test_strings_and_items_are_checked():
     assert validate([]) == ["pg-backup.json: should be an object"]
 
 
-def test_a_schema_rule_this_release_cant_check_stops():
+@then("a schema rule this release can't check stops")
+def a_schema_rule_this_release_cant_check_stops():
     with pytest.raises(ConfigError, match="doesn't check"):
         _errors(1, {"maximum": 3}, {}, "x")
 
 
-def test_the_schema_ships_with_the_package():
+@then("the schema ships with the package")
+def the_schema_ships_with_the_package():
     assert schema()["title"] == "pg-backup.json"
 
 
-def test_load_reads_the_repository_file(config):
+@then("load reads the repository file")
+def load_reads_the_repository_file(config):
     assert config.pod == "postgres-0"
     assert config.is_scratch("auth-restore-20261106070216")
     assert not config.is_scratch("auth")
@@ -64,7 +74,8 @@ def test_load_reads_the_repository_file(config):
     assert config.scratch("--namespace=auth") is None
 
 
-def test_load_says_what_is_wrong(tmp_path, monkeypatch):
+@then("load says what is wrong")
+def load_says_what_is_wrong(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ConfigError, match="no backups/pg-backup.json"):
         load()
@@ -77,7 +88,8 @@ def test_load_says_what_is_wrong(tmp_path, monkeypatch):
         load()
 
 
-def test_a_schema_reference_is_kept(tmp_path, monkeypatch):
+@then("a schema reference is kept")
+def a_schema_reference_is_kept(tmp_path, monkeypatch):
     data = example() | {"$schema": "https://example/pg-backup.schema.json"}
     monkeypatch.chdir(tmp_path)
     (tmp_path / "backups").mkdir()

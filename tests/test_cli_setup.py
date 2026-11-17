@@ -12,20 +12,28 @@ from pg_backup.server import Server, ServerError
 from pg_backup.setup import env_name, push, pubsec_wheel, secret_manifest, setup
 
 from conftest import EXAMPLE
+from pytest_bdd import scenarios, then
+
+scenarios("cli-setup.feature")
 
 
-def test_check_reads_the_file(config, capsys):
+@then("check reads the file")
+def check_reads_the_file(config, capsys):
     assert cli.main(["check"]) == 0
     assert "valid: auth on sustenaut" in capsys.readouterr().out
 
 
-def test_a_bad_file_is_exit_2(tmp_path, monkeypatch, capsys):
+@then("a bad file is exit 2")
+def a_bad_file_is_exit_2(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert cli.main(["drill"]) == 2
     assert "no backups/pg-backup.json" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("argv, called", [
+@then("each command runs its function")
+def each_command_runs_its_function(config, monkeypatch):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [
     (["restore", "--to", "latest"], "restore"),
     (["drill"], "drill"),
     (["drill", "--wait"], "wait_until_ready"),
@@ -33,8 +41,12 @@ def test_a_bad_file_is_exit_2(tmp_path, monkeypatch, capsys):
     (["promote", "auth-restore-20261106070216"], "promote"),
     (["setup-secrets"], "setup"),
     (["setup-secrets", "--push"], "push"),
-])
-def test_each_command_runs_its_function(config, monkeypatch, argv, called):
+]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_each_command_runs_its_function(argv=case0[0], called=case0[1], config=config, monkeypatch=monkeypatch)
+
+
+def _case_each_command_runs_its_function(config, monkeypatch, argv, called):
     seen = []
     for name in ("restore", "drill", "clean", "promote", "setup", "push", "wait_until_ready"):
         monkeypatch.setattr(cli, name, lambda *a, _n=name, **k: seen.append(_n) or 0)
@@ -42,7 +54,8 @@ def test_each_command_runs_its_function(config, monkeypatch, argv, called):
     assert seen == ([called, "drill"] if called == "wait_until_ready" else [called])
 
 
-def test_stops_and_server_errors_become_exit_codes(config, monkeypatch, capsys):
+@then("stops and server errors become exit codes")
+def stops_and_server_errors_become_exit_codes(config, monkeypatch, capsys):
     def stop(*a, **k):
         raise Stop(3, "too early")
 
@@ -56,14 +69,16 @@ def test_stops_and_server_errors_become_exit_codes(config, monkeypatch, capsys):
     assert "Permission denied" in capsys.readouterr().err
 
 
-def test_the_module_runs_as_a_program(config):
+@then("the module runs as a program")
+def the_module_runs_as_a_program(config):
     src = Path(__file__).resolve().parent.parent / "src"
     done = subprocess.run([sys.executable, "-m", "pg_backup", "--version"], capture_output=True, text=True,
                           env={"PYTHONPATH": str(src)})
     assert done.stdout.startswith("pg-backup ")
 
 
-def test_the_server_quotes_each_argument(monkeypatch):
+@then("the server quotes each argument")
+def the_server_quotes_each_argument(monkeypatch):
     seen = {}
 
     def fake_run(argv, input=None, capture_output=True):
@@ -84,7 +99,8 @@ def test_the_server_quotes_each_argument(monkeypatch):
     assert server.run("false", check=False) == "out"
 
 
-def test_the_secret_is_made_from_the_environment(config, server):
+@then("the secret is made from the environment")
+def the_secret_is_made_from_the_environment(config, server):
     environ = {"AUTH_WAL_KEY": "secret"}
     server.on(r"go-template", "libsodium-key ")
     push(config, server, environ)
@@ -122,7 +138,8 @@ def repo(tmp_path, config):
     return tmp_path
 
 
-def test_setup_makes_the_missing_key_then_pushes(config, server, repo):
+@then("setup makes the missing key then pushes")
+def setup_makes_the_missing_key_then_pushes(config, server, repo):
     runs = Runs(failing=["test -n"])  # the key is not in Bitwarden yet
     out = []
     setup(config, server, repo, say=out.append, run=runs, which=lambda t: "/usr/bin/" + t)
@@ -133,7 +150,8 @@ def test_setup_makes_the_missing_key_then_pushes(config, server, repo):
     assert out[-1] == "   done"
 
 
-def test_setup_keeps_the_key_already_there(config, server, repo):
+@then("setup keeps the key already there")
+def setup_keeps_the_key_already_there(config, server, repo):
     runs = Runs()
     out = []
     setup(config, server, repo, say=out.append, run=runs, which=lambda t: t)
@@ -141,18 +159,26 @@ def test_setup_keeps_the_key_already_there(config, server, repo):
     assert pubsec_wheel(repo).endswith("pubsec-0.1.2-py3-none-any.whl")
 
 
-@pytest.mark.parametrize("failing, which, message", [
+@then("setup stops on each failure")
+def setup_stops_on_each_failure(config, server, repo):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [
     ([], lambda t: None if t == "bws" else t, "bws is not installed"),
     (["buckets describe"], lambda t: t, "apply the Terraform"),
     (["test -n", "uvx"], lambda t: t, "couldn't make auth-wal-key"),
     (["--push"], lambda t: t, "couldn't put the Secret"),
-])
-def test_setup_stops_on_each_failure(config, server, repo, failing, which, message):
+]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_setup_stops_on_each_failure(failing=case0[0], which=case0[1], message=case0[2], config=config, server=server, repo=repo)
+
+
+def _case_setup_stops_on_each_failure(config, server, repo, failing, which, message):
     with pytest.raises(Stop, match=message):
         setup(config, server, repo, say=lambda s: None, run=Runs(failing), which=which)
 
 
-def test_setup_needs_the_repository_scripts_and_the_server(config, server, tmp_path):
+@then("setup needs the repository scripts and the server")
+def setup_needs_the_repository_scripts_and_the_server(config, server, tmp_path):
     with pytest.raises(Stop, match="no ./pubsec"):
         setup(config, server, tmp_path, say=lambda s: None, run=Runs(), which=lambda t: t)
     (tmp_path / "pubsec").write_text("no wheel here")
@@ -175,12 +201,19 @@ class FakeProcess:
         return self.returncode
 
 
-@pytest.mark.parametrize("first, second, message", [
+@then("the server pipes one kubectl into another")
+def the_server_pipes_one_kubectl_into_another(monkeypatch):
+    """Every case of the parametrized test this was, in turn."""
+    for case0 in [
     (0, 0, None),
     (1, 0, "kubectl -n ns exec restore … failed"),
     (0, 1, "kubectl -n auth exec -i … failed"),
-])
-def test_the_server_pipes_one_kubectl_into_another(monkeypatch, first, second, message):
+]:
+        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
+        _case_the_server_pipes_one_kubectl_into_another(first=case0[0], second=case0[1], message=case0[2], monkeypatch=monkeypatch)
+
+
+def _case_the_server_pipes_one_kubectl_into_another(monkeypatch, first, second, message):
     seen = []
     monkeypatch.setattr(subprocess, "Popen", lambda argv, **k: seen.append(argv) or FakeProcess(first, b"broke"))
 
