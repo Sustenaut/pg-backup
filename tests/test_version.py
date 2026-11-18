@@ -1,25 +1,31 @@
+"""Steps for pg-backup's version, and the one the runner consumer's copy pins."""
+
 import re
 import tomllib
 from pathlib import Path
 
 import pg_backup
-from pytest_bdd import scenarios, then
+from pytest_bdd import scenarios, when
 
 scenarios("version.feature")
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
-@then("the runner consumer's copy pins this release")
-def the_runner_consumers_copy_pins_this_release():
+@when("the version consumer/pg-backup pins is compared with pyproject.toml's")
+def pins_compared(ctx):
     """consumer/pg-backup is what a repository copies to backups/pg-backup: it must run the
     release it ships in. pubrel sets pyproject.toml's version on a release pull request, so
     this fails there until consumer/pg-backup's version= line is moved to match."""
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
-    pinned = re.search(r"^version=(\S+)$", (ROOT / "consumer" / "pg-backup").read_text(), re.M).group(1)
-    assert pinned == project, f"consumer/pg-backup pins {pinned}; set version={project} in it"
+
+    def compare():
+        project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+        pinned = re.search(r"^version=(\S+)$", (ROOT / "consumer" / "pg-backup").read_text(), re.M).group(1)
+        return {"consumer/pg-backup": pinned, "pyproject.toml": project, "the same": pinned == project}
+
+    ctx.attempt(compare)
 
 
-@then("the version is the installed package's")
-def the_version_is_the_installed_package_s():
-    assert pg_backup.__version__ == "unreleased"  # from src/, not installed
+@when("pg-backup's version is read")
+def version_read(ctx):
+    ctx.attempt(lambda: pg_backup.__version__)

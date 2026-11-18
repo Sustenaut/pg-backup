@@ -1,234 +1,71 @@
-import base64
-import json
-import subprocess
-import sys
-from pathlib import Path
+"""Steps for pg-backup's command line, the server it reaches over ssh, and setup-secrets."""
 
-import pytest
+import shlex
+import sys
+
+from pytest_bdd import given, parsers, scenarios, when
 
 from pg_backup import cli
+from pg_backup.config import load
 from pg_backup.restore import Stop
 from pg_backup.server import Server, ServerError
-from pg_backup.setup import env_name, push, pubsec_wheel, secret_manifest, setup
+from pg_backup.setup import push
 
-from conftest import EXAMPLE
-from pytest_bdd import scenarios, then
-
-scenarios("cli-setup.feature")
+scenarios("cli-setup.feature", "setup-secrets.feature")
 
 
-@then("check reads the file")
-def check_reads_the_file(config, capsys):
-    assert cli.main(["check"]) == 0
-    assert "valid: auth on sustenaut" in capsys.readouterr().out
+@when(parsers.parse('pg-backup runs "{command}"'))
+def pg_backup_runs(ctx, command):
+    ctx.attempt(lambda: sys.exit(cli.main(shlex.split(command))))
 
 
-@then("a bad file is exit 2")
-def a_bad_file_is_exit_2(tmp_path, monkeypatch, capsys):
-    monkeypatch.chdir(tmp_path)
-    assert cli.main(["drill"]) == 2
-    assert "no backups/pg-backup.json" in capsys.readouterr().err
-
-
-@then("each command runs its function")
-def each_command_runs_its_function(config, monkeypatch):
-    """Every case of the parametrized test this was, in turn."""
-    for case0 in [
-    (["restore", "--to", "latest"], "restore"),
-    (["drill"], "drill"),
-    (["drill", "--wait"], "wait_until_ready"),
-    (["clean", "auth-restore-20261106070216"], "clean"),
-    (["promote", "auth-restore-20261106070216"], "promote"),
-    (["setup-secrets"], "setup"),
-    (["setup-secrets", "--push"], "push"),
-]:
-        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
-        _case_each_command_runs_its_function(argv=case0[0], called=case0[1], config=config, monkeypatch=monkeypatch)
-
-
-def _case_each_command_runs_its_function(config, monkeypatch, argv, called):
-    seen = []
+@given("every command's function only says its name")
+def functions_say_names(monkeypatch):
     for name in ("restore", "drill", "clean", "promote", "setup", "push", "wait_until_ready"):
-        monkeypatch.setattr(cli, name, lambda *a, _n=name, **k: seen.append(_n) or 0)
-    assert cli.main(argv) == 0
-    assert seen == ([called, "drill"] if called == "wait_until_ready" else [called])
+        monkeypatch.setattr(cli, name, lambda *a, _n=name, **k: print(_n) or 0)
 
 
-@then("stops and server errors become exit codes")
-def stops_and_server_errors_become_exit_codes(config, monkeypatch, capsys):
+@given(parsers.parse('restoring stops with exit {code:d}, saying "{reason}"'))
+def restoring_stops(monkeypatch, code, reason):
     def stop(*a, **k):
-        raise Stop(3, "too early")
-
-    def broken(*a, **k):
-        raise ServerError("ssh failed", "Permission denied")
+        raise Stop(code, reason)
 
     monkeypatch.setattr(cli, "restore", stop)
-    assert cli.main(["restore", "--to", "latest"]) == 3
+
+
+@given(parsers.parse('restoring fails on the server with "{what}", saying "{output}"'))
+def restoring_fails(monkeypatch, what, output):
+    def broken(*a, **k):
+        raise ServerError(what, output)
+
     monkeypatch.setattr(cli, "restore", broken)
-    assert cli.main(["restore", "--to", "latest"]) == 1
-    assert "Permission denied" in capsys.readouterr().err
 
 
-@then("the module runs as a program")
-def the_module_runs_as_a_program(config):
-    src = Path(__file__).resolve().parent.parent / "src"
-    done = subprocess.run([sys.executable, "-m", "pg_backup", "--version"], capture_output=True, text=True,
-                          env={"PYTHONPATH": str(src)})
-    assert done.stdout.startswith("pg-backup ")
+@when(parsers.parse('kubectl runs on the server "{host}" with "{words}"'))
+def kubectl_runs(ctx, host, words):
+    ctx.attempt(lambda: Server(host).kubectl(*shlex.split(words)))
 
 
-@then("the server quotes each argument")
-def the_server_quotes_each_argument(monkeypatch):
-    seen = {}
-
-    def fake_run(argv, input=None, capture_output=True):
-        seen["argv"] = argv
-        return subprocess.CompletedProcess(argv, seen.get("code", 0), b"out", b"err")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    server = Server("sustenaut")
-    assert server.kubectl("-n", "auth", "exec", "x", "--", "psql", "-c", "select 'a b'") == "out"
-    assert seen["argv"][:4] == ["ssh", "-o", "BatchMode=yes", "root@sustenaut"]
-    assert seen["argv"][4] == "k3s kubectl -n auth exec x -- psql -c 'select '\"'\"'a b'\"'\"''"
-    assert server.ok("get", "pods")
-    seen["code"] = 1
-    assert not server.ok("get", "pods")
-    with pytest.raises(ServerError) as error:
-        server.run("false", input="x")
-    assert error.value.output == "outerr"
-    assert server.run("false", check=False) == "out"
+@when(parsers.parse('the server "{host}" is asked whether kubectl "{words}" is ok'))
+def kubectl_ok(ctx, host, words):
+    ctx.attempt(lambda: Server(host).ok(*shlex.split(words)))
 
 
-@then("the secret is made from the environment")
-def the_secret_is_made_from_the_environment(config, server):
-    environ = {"AUTH_WAL_KEY": "secret"}
-    server.on(r"go-template", "libsodium-key ")
-    push(config, server, environ)
-    sent = json.loads(server.inputs[0])
-    assert sent["metadata"] == {"name": "auth-wal", "namespace": "auth"}
-    # The encryption key alone: the bucket is reached through Workload Identity, with no key.
-    assert sent["data"] == {"libsodium-key": base64.b64encode(b"secret").decode()}
-    assert server.calls[0] == "k3s kubectl apply -f -" and "k3s kubectl replace -f -" not in server.calls
-    assert "get secret auth-wal" in server.calls[1] and "go-template" in server.calls[1]
-    # A Secret apply leaves a bucket key in (made by create secret, or edited) is replaced.
-    server.on(r"go-template", "gcs-key.json libsodium-key ")
-    push(config, server, environ)
-    assert server.calls[-1] == "k3s kubectl replace -f -" and json.loads(server.inputs[-1]) == sent
-    with pytest.raises(Stop, match="AUTH_WAL_KEY is not set"):
-        push(config, server, {})
-    assert env_name("auth-wal-key") == "AUTH_WAL_KEY"
-    assert secret_manifest(config, "b")["type"] == "Opaque"
+@when(parsers.parse('the server "{host}" runs "{command}" with the input "{text}"'))
+def server_runs_with_input(ctx, host, command, text):
+    ctx.attempt(lambda: Server(host).run(command, input=text))
 
 
-class Runs:
-    def __init__(self, failing=()):
-        self.failing = failing
-        self.calls = []
-
-    def __call__(self, argv, **kwargs):
-        self.calls.append(argv)
-        failed = any(word in " ".join(argv) for word in self.failing)
-        return subprocess.CompletedProcess(argv, 1 if failed else 0)
+@when(parsers.parse('the server "{host}" runs "{command}" unchecked'))
+def server_runs_unchecked(ctx, host, command):
+    ctx.attempt(lambda: Server(host).run(command, check=False))
 
 
-@pytest.fixture
-def repo(tmp_path, config):
-    (tmp_path / "pubsec").write_text('exec uvx --from "https://github.com/Sustenaut/pubsec/releases/download/v0.1.2/pubsec-0.1.2-py3-none-any.whl" pubsec "$@"\n')
-    (tmp_path / "with-secrets").write_text("")
-    return tmp_path
+@when(parsers.parse('the server "{host}" pipes "{source}" into "{sink}"'))
+def server_pipes(ctx, host, source, sink):
+    ctx.attempt(lambda: Server(host).pipe(tuple(shlex.split(source)), tuple(shlex.split(sink))))
 
 
-@then("setup makes the missing key then pushes")
-def setup_makes_the_missing_key_then_pushes(config, server, repo):
-    runs = Runs(failing=["test -n"])  # the key is not in Bitwarden yet
-    out = []
-    setup(config, server, repo, say=out.append, run=runs, which=lambda t: "/usr/bin/" + t)
-    joined = [" ".join(c) for c in runs.calls]
-    assert not any("service-account-key" in c for c in joined)  # no bucket key is made
-    assert any(c.startswith("uvx --from https://github.com/Sustenaut/pubsec/") and c.endswith("auth-wal-key " + c.split("auth-wal-key ", 1)[1]) for c in joined)
-    assert joined[-1] == "./with-secrets ./backups/pg-backup setup-secrets --push"
-    assert out[-1] == "   done"
-
-
-@then("setup keeps the key already there")
-def setup_keeps_the_key_already_there(config, server, repo):
-    runs = Runs()
-    out = []
-    setup(config, server, repo, say=out.append, run=runs, which=lambda t: t)
-    assert out.count("   already in Bitwarden") == 1
-    assert pubsec_wheel(repo).endswith("pubsec-0.1.2-py3-none-any.whl")
-
-
-@then("setup stops on each failure")
-def setup_stops_on_each_failure(config, server, repo):
-    """Every case of the parametrized test this was, in turn."""
-    for case0 in [
-    ([], lambda t: None if t == "bws" else t, "bws is not installed"),
-    (["buckets describe"], lambda t: t, "apply the Terraform"),
-    (["test -n", "uvx"], lambda t: t, "couldn't make auth-wal-key"),
-    (["--push"], lambda t: t, "couldn't put the Secret"),
-]:
-        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
-        _case_setup_stops_on_each_failure(failing=case0[0], which=case0[1], message=case0[2], config=config, server=server, repo=repo)
-
-
-def _case_setup_stops_on_each_failure(config, server, repo, failing, which, message):
-    with pytest.raises(Stop, match=message):
-        setup(config, server, repo, say=lambda s: None, run=Runs(failing), which=which)
-
-
-@then("setup needs the repository scripts and the server")
-def setup_needs_the_repository_scripts_and_the_server(config, server, tmp_path):
-    with pytest.raises(Stop, match="no ./pubsec"):
-        setup(config, server, tmp_path, say=lambda s: None, run=Runs(), which=lambda t: t)
-    (tmp_path / "pubsec").write_text("no wheel here")
-    (tmp_path / "with-secrets").write_text("")
-    server.on(r"^true$", ServerError("down"))
-    with pytest.raises(Stop, match="doesn't answer"):
-        setup(config, server, tmp_path, say=lambda s: None, run=Runs(), which=lambda t: t)
-    with pytest.raises(Stop, match="no pubsec wheel"):
-        pubsec_wheel(tmp_path)
-
-
-class FakeProcess:
-    def __init__(self, code, err=b""):
-        import io
-        self.stdout = io.BytesIO(b"dump")
-        self.stderr = io.BytesIO(err)
-        self.returncode = code
-
-    def wait(self):
-        return self.returncode
-
-
-@then("the server pipes one kubectl into another")
-def the_server_pipes_one_kubectl_into_another(monkeypatch):
-    """Every case of the parametrized test this was, in turn."""
-    for case0 in [
-    (0, 0, None),
-    (1, 0, "kubectl -n ns exec restore … failed"),
-    (0, 1, "kubectl -n auth exec -i … failed"),
-]:
-        case0 = case0.values if type(case0).__name__ == "ParameterSet" else case0
-        _case_the_server_pipes_one_kubectl_into_another(first=case0[0], second=case0[1], message=case0[2], monkeypatch=monkeypatch)
-
-
-def _case_the_server_pipes_one_kubectl_into_another(monkeypatch, first, second, message):
-    seen = []
-    monkeypatch.setattr(subprocess, "Popen", lambda argv, **k: seen.append(argv) or FakeProcess(first, b"broke"))
-
-    def fake_run(argv, stdin=None, capture_output=True):
-        seen.append(argv)
-        return subprocess.CompletedProcess(argv, second, b"", b"pg_restore: error")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-    server = Server("sustenaut")
-    source, sink = ("-n", "ns", "exec", "restore", "--", "pg_dump"), ("-n", "auth", "exec", "-i", "p", "--", "pg_restore")
-    if message is None:
-        server.pipe(source, sink)
-    else:
-        with pytest.raises(ServerError, match=message) as error:
-            server.pipe(source, sink)
-        assert error.value.output in ("broke", "pg_restore: error")
-    assert seen[0][4] == "k3s kubectl -n ns exec restore -- pg_dump"
-    assert seen[1][4] == "k3s kubectl -n auth exec -i p -- pg_restore"
+@when("the WAL Secret is put in the cluster")
+def secret_put(ctx):
+    ctx.attempt(lambda: push(load(), ctx.server))

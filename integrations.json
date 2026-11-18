@@ -3,7 +3,6 @@
     {
       "plugin": "bitwarden.secrets",
       "paths": [
-        "tests/test_cli_setup.py",
         "tests/test_need.py"
       ],
       "mode": "required"
@@ -27,8 +26,7 @@
       "plugin": "github.ghcr",
       "paths": [
         ".github/workflows/publish.yml",
-        "tests/conftest.py",
-        "tests/test_restore.py"
+        "tests/conftest.py"
       ],
       "mode": "required"
     },
