@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Managed by pubrules 0.43.0: `pubrules sync` rewrites this file, and
+# Managed by pubrules 0.45.0: `pubrules sync` rewrites this file, and
 # `pubrules sync --check` fails when it differs.
 #
 # Run this repository's pubrules: the version its managed files and
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 if ! command -v uvx >/dev/null 2>&1; then
-  echo "pubrules: ./pubrules runs pubrules 0.43.0 with uv, which is not installed: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+  echo "pubrules: ./pubrules runs pubrules 0.45.0 with uv, which is not installed: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
   exit 127
 fi
 
@@ -42,8 +42,8 @@ fetch() {
   fi
 }
 
-# pubrules's own wheel, by the sha256 tests/requirements.lock pins, from the mirror when GitHub fails.
-from="https://github.com/Sustenaut/pubrules/releases/download/v0.43.0/pubrules-0.43.0-py3-none-any.whl"
+# pubrules' own wheel, by the sha256 tests/requirements.lock pins, from the mirror when GitHub fails.
+from="https://github.com/Sustenaut/pubrules/releases/download/v0.45.0/pubrules-0.45.0-py3-none-any.whl"
 pin=$(sed -n "\#^pubrules @ $from#,/--hash=sha256:/s/.*--hash=sha256:\([0-9a-f]\{64\}\).*/\1/p" tests/requirements.lock 2>/dev/null | head -n 1)
 if [ -n "$pin" ]; then
   fetch "$from" "$pin" wheels tests/requirements.lock

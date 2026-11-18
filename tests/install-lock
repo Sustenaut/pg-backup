@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Managed by pubrules 0.43.0: `pubrules sync` rewrites this file, and
+# Managed by pubrules 0.45.0: `pubrules sync` rewrites this file, and
 # `pubrules sync --check` fails when it differs.
 #
 # Install a hash-locked requirements file with pip, and ride out release
