@@ -1,112 +1,85 @@
+"""Steps for pg-backup.json: changed setting by setting, checked, and loaded."""
+
 import json
-import re
+from pathlib import Path
 
-import pytest
+from pubtest.core import value
+from pytest_bdd import given, parsers, scenarios, when
 
-from pg_backup.config import ConfigError, _errors, load, schema, validate
-
-from conftest import EXAMPLE
-from pytest_bdd import given, parsers, scenarios, then
+from pg_backup.config import _errors, load, schema, validate
 
 scenarios("config.feature")
 
-
-def example():
-    return json.loads(EXAMPLE.read_text())
+FILE = Path("backups/pg-backup.json")
 
 
-@then("the example is valid")
-def the_example_is_valid():
-    assert validate(example()) == []
+def _change(change):
+    data = json.loads(FILE.read_text())
+    change(data)
+    FILE.write_text(json.dumps(data))
 
 
-@then("a typo in a setting name is caught")
-def a_typo_in_a_setting_name_is_caught():
-    data = example()
-    data["namespce"] = data.pop("namespace")
-    problems = validate(data)
-    assert "pg-backup.json: namespace is missing" in problems
-    assert "pg-backup.json: namespce isn't a setting (a typo?)" in problems
+def _at(data, key):
+    *path, last = key.split(".")
+    for part in path:
+        data = data[part]
+    return data, last
 
 
-@then("nested settings are checked")
-def nested_settings_are_checked():
-    data = example()
-    data["wal"]["bucket"] = "gs://sustenaut-auth-wal"
-    data["check"]["required"] = []
-    data["app"] = "keycloak"
-    problems = validate(data)
-    assert any(p.startswith("pg-backup.json.wal.bucket: 'gs://") for p in problems)
-    assert "pg-backup.json.check.required: needs at least 1" in problems
-    assert "pg-backup.json.app: should be an object" in problems
+@given(parsers.re(r'pg-backup\.json\'s "(?P<key>[^"]+)" is "(?P<text>.*)"'))
+def setting_is(key, text):
+    def change(data):
+        where, last = _at(data, key)
+        where[last] = value(text)
+    _change(change)
 
 
-@then("strings and items are checked")
-def strings_and_items_are_checked():
-    data = example()
-    data["check"]["query"] = ""
-    data["check"]["required"] = ["ok", "no spaces"]
-    problems = validate(data)
-    assert "pg-backup.json.check.query: is empty" in problems
-    assert any(p.startswith("pg-backup.json.check.required[1]") for p in problems)
-    assert validate([]) == ["pg-backup.json: should be an object"]
+@given(parsers.parse('pg-backup.json\'s "{key}" is empty'))
+def setting_is_empty(key):
+    def change(data):
+        where, last = _at(data, key)
+        where[last] = ""
+    _change(change)
 
 
-@then("a schema rule this release can't check stops")
-def a_schema_rule_this_release_cant_check_stops():
-    with pytest.raises(ConfigError, match="doesn't check"):
-        _errors(1, {"maximum": 3}, {}, "x")
+@given(parsers.parse('pg-backup.json\'s "{key}" is renamed "{name}"'))
+def setting_renamed(key, name):
+    def change(data):
+        where, last = _at(data, key)
+        where[name] = where.pop(last)
+    _change(change)
 
 
-@then("the schema ships with the package")
-def the_schema_ships_with_the_package():
-    assert schema()["title"] == "pg-backup.json"
+@when("pg-backup.json is checked against the schema")
+def checked(ctx):
+    ctx.attempt(lambda: validate(json.loads(FILE.read_text())))
 
 
-@then("load reads the repository file")
-def load_reads_the_repository_file(config):
-    assert config.pod == "postgres-0"
-    assert config.is_scratch("auth-restore-20261106070216")
-    assert not config.is_scratch("auth")
-    assert not config.is_scratch("other-restore-20261106070216")
-    assert config.scratch("auth-restore-00261106070216") == "auth-restore-00261106070216"
-    assert config.scratch("auth-restore-2026110607021") is None
-    assert config.scratch("auth-restore-20261106070216\n") is None
-    assert config.scratch("--namespace=auth") is None
+@when(parsers.parse('the value "{text}" is checked against the rule "{rule}"'))
+def checked_against_rule(ctx, text, rule):
+    ctx.attempt(lambda: _errors(json.loads(text), json.loads(rule), {}, "x"))
 
 
-@then("load says what is wrong")
-def load_says_what_is_wrong(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    with pytest.raises(ConfigError, match="no backups/pg-backup.json"):
-        load()
-    (tmp_path / "backups").mkdir()
-    (tmp_path / "backups" / "pg-backup.json").write_text("{")
-    with pytest.raises(ConfigError, match="isn't JSON"):
-        load()
-    (tmp_path / "backups" / "pg-backup.json").write_text('{"server": "sustenaut"}')
-    with pytest.raises(ConfigError, match="namespace is missing"):
-        load()
+@when("the package's schema is read")
+def schema_read(ctx):
+    ctx.attempt(schema)
 
 
-@then("a schema reference is kept")
-def a_schema_reference_is_kept(tmp_path, monkeypatch):
-    data = example() | {"$schema": "https://example/pg-backup.schema.json"}
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "backups").mkdir()
-    (tmp_path / "backups" / "pg-backup.json").write_text(json.dumps(data))
-    assert load().namespace == "auth"
+@when("the settings are loaded")
+def loaded(ctx):
+    ctx.attempt(load)
 
 
-@given(parsers.parse('pg-backup.json\'s namespace is "{namespace}"'), target_fixture="repository")
-def namespace_is(tmp_path, monkeypatch, namespace):
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "backups").mkdir()
-    (tmp_path / "backups" / "pg-backup.json").write_text(json.dumps(example() | {"namespace": namespace}))
-    return tmp_path
+@when(parsers.parse('I ask whether "{namespace}" is a scratch namespace'))
+def is_scratch(ctx, namespace):
+    ctx.attempt(lambda: load().is_scratch(namespace))
 
 
-@then(parsers.parse('load says "{words}"'))
-def load_says(repository, words):
-    with pytest.raises(ConfigError, match=re.escape(words)):
-        load()
+@when(parsers.parse('the scratch namespace "{namespace}" is named'))
+def scratch_named(ctx, namespace):
+    ctx.attempt(lambda: load().scratch(namespace))
+
+
+@when("the scratch namespace named is:")
+def scratch_named_text(ctx, docstring):
+    ctx.attempt(lambda: load().scratch(docstring))

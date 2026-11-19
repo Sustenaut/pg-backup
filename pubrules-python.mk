@@ -1,4 +1,4 @@
-# Managed by pubrules 0.43.0: `pubrules sync` rewrites this file, and
+# Managed by pubrules 0.45.0: `pubrules sync` rewrites this file, and
 # `pubrules sync --check` fails when it differs. Include it from the Makefile,
 # and set the variables below there, before the include; targets of your own
 # go there too. It is the same in every Python package, so a rule set here
@@ -37,7 +37,7 @@ functional: ## The Gherkin suite on every core, with its coverage in coverage/co
 lock: ## Pin tests/requirements.txt, with hashes, in tests/requirements.lock
 	./pubrules lock
 
-sync-check: ## Fail if pubrules's managed files differ from the pinned version's
+sync-check: ## Fail if pubrules' managed files differ from the pinned version's
 	./pubrules sync --check
 
 wheel: ## Build the wheel a release carries

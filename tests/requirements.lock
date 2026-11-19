@@ -349,10 +349,10 @@ parse_type==0.6.6 \
 pluggy==1.7.0 \
     --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec \
     --hash=sha256:d1eaa46ebb595891b860ab086b4d09c8588af65ebd4361b8e8f4bb8920b90ba8
-pubrules @ https://github.com/Sustenaut/pubrules/releases/download/v0.43.0/pubrules-0.43.0-py3-none-any.whl \
-    --hash=sha256:5ee0ce4c6a38225a6d7923a7e08e5785d7e6942aff7a08955b136c77b60197ef
-pubtest @ https://github.com/Sustenaut/pubtest/releases/download/v0.1.0/pubtest-0.1.0-py3-none-any.whl \
-    --hash=sha256:f70c728e4574a25750dad62d4172d3add0f5f0f27563e8ae9728271f3a4f7ec7
+pubrules @ https://github.com/Sustenaut/pubrules/releases/download/v0.45.0/pubrules-0.45.0-py3-none-any.whl \
+    --hash=sha256:c72e5dab8e2d4a3d5de4d4643a28fb5812564da99146209e9326920a4389ed0a
+pubtest @ https://github.com/Sustenaut/pubtest/releases/download/v0.2.1/pubtest-0.2.1-py3-none-any.whl \
+    --hash=sha256:ca36ada5136c99a0fe717d027c655fbfc1e57a60d76bbbb5fb215b6376abf914
 Pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
     --hash=sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c
